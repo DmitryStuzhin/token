@@ -68,8 +68,14 @@
           <span class="s">${overdue ? 'есть просроченные' : 'всё в срок'}</span></span>
           <span class="r" style="font-size:18px;font-weight:750;color:${overdue ? 'var(--red)' : 'var(--green)'}">${overdue || '✓'}</span></div>
       </div>
-      ${tns.length ? `<div class="hint" style="margin-top:14px">Больше всего времени ушло на:
-        ${tns.map(t => `<b>№${t.egeNumber}</b> — ${C.fmtDur(t.seconds)}, ${t.percent}% верных`).join(' · ')}</div>` : ''}
+      <div class="hint" style="margin-top:14px">По предметам:
+        ${C.subjectsOf(S).map(sj => {
+          const kk = C.kpi(S, sj.id);
+          return `<b>${UI.esc(sj.name)}</b> — ${kk.solvedWeek} ${C.plural(kk.solvedWeek,'задача','задачи','задач')}` +
+                 (kk.accuracy != null ? ', ' + kk.accuracy + '% верных' : '');
+        }).join(' · ')}</div>
+      ${tns.length ? `<div class="hint" style="margin-top:8px">Больше всего времени ушло на:
+        ${tns.map(t => `<b>${UI.esc(t.subject.short)} №${t.number}</b> — ${C.fmtDur(t.seconds)}, ${t.percent}% верных`).join(' · ')}</div>` : ''}
     </section>`;
   }
 
@@ -89,8 +95,9 @@
     return `<div class="card">
       <div class="head"><h2>Ближайшее занятие</h2></div>
       <div style="font-size:17px;font-weight:650">${C.relDay(nl.startsAt) || C.fmtDate(nl.startsAt)} в ${C.fmtTime(nl.startsAt)}</div>
-      <div class="muted small" style="margin-top:4px">${nl.durationMin} минут · ${
-        UI.esc((C.tutorOf(S)||{}).user.name)}</div>
+      <div class="muted small" style="margin-top:4px">${nl.durationMin} минут ·
+        ${UI.esc(C.subject(nl.subjectId).name)} ·
+        ${UI.esc(((C.tutorOf(S, nl.subjectId)||{}).user||{}).name || '—')}</div>
       <div class="note n-grey" style="margin-top:12px">Ссылку на созвон видит ученик — родителю она не нужна.</div>
     </div>`;
   }
@@ -152,7 +159,7 @@
   UI.page({
     active:'progress',
     head:{ title:`Прогресс · ${kid.name.split(' ')[0]}`,
-      sub:`${C.student(S).grade} класс · ${UI.esc((C.tutorOf(S)||{}).user.name)} · доступ только на чтение`,
+      sub:`${C.student(S).grade} класс · ${C.subjectsOf(S).map(x => UI.esc(x.name)).join(', ')} · доступ только на чтение`,
       actions: switcherHTML() },
     body:`${kpiHTML()}
       ${digestHTML()}

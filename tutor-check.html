@@ -29,7 +29,7 @@
       <div class="head"><h2>Очередь</h2><span class="muted small">${queue.length}</span></div>
       <div class="tasklist">${queue.map(q => `
         <a href="tutor-check.html?attempt=${q.attempt.id}" class="${q.attempt.id === cur.attempt.id ? 'cur' : ''}">
-          <span class="badge b-amber">№${q.task ? q.task.egeNumber : '?'}</span>
+          <span class="badge b-amber">№${q.task ? q.task.number : '?'}</span>
           <span class="grow">${UI.esc(q.user.name.split(' ')[0])} · ${UI.esc(q.task ? q.task.title : '')}</span>
           <span class="muted small">${C.fmtDate(q.attempt.submittedAt)}</span></a>`).join('')}</div>
     </div>`;
@@ -51,7 +51,7 @@
             <span class="badge b-amber">ручная проверка</span>
           </div>
           <div class="note n-grey" style="margin-bottom:14px">
-            <b>№${t.egeNumber} · ${UI.esc(t.title)}</b><br>${UI.esc(t.statement)}
+            <b>№${t.number} · ${UI.esc(t.title)}</b><br>${UI.esc(t.statement)}
           </div>
           <div class="editor">
             <div class="ehead"><span>код ученика</span>
@@ -65,7 +65,7 @@
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
             <span class="muted small">Балл:</span>
             ${[0,1,2].map(n => `<button class="btn sm grey score" data-n="${n}">${n}</button>`).join('')}
-            <span class="muted small">из 2 (первичный балл №${t.egeNumber})</span>
+            <span class="muted small">из 2 (первичный балл №${t.number})</span>
           </div>
           <textarea id="comment" placeholder="комментарий ученику — он увидит его в карточке д/з"
             style="width:100%;min-height:90px;padding:12px 14px;border:1.5px solid var(--line);

@@ -3,8 +3,13 @@
 
    Всё, что показывают экраны, считается здесь из таблиц DB.
    В боевой версии эти функции переезжают на сервер и превращаются
-   в TopicMastery / DailyActivity / TaskNumberStats из доменной модели —
-   сигнатуры специально совпадают с именами таблиц.
+   в TopicMastery / DailyActivity / TaskNumberStats из доменной модели.
+
+   Правило масштабирования: ни одна функция не знает про конкретный
+   предмет. Номера заданий, максимумы и шкала перевода берутся из
+   subject.exam, поэтому новый предмет — это запись в таблице.
+   Почти все выборки принимают необязательный subjectId: без него —
+   по всем предметам ученика, с ним — по одному.
    ═══════════════════════════════════════════════════════════════════ */
 window.Core = (function () {
   const db = DB.load();
@@ -19,46 +24,111 @@ window.Core = (function () {
   const lesson = id => byId(db.lessons, id);
   const assignment = id => byId(db.assignments, id);
   const attempt = id => byId(db.attempts, id);
+  const subject = id => byId(db.subjects, id);
+  const group = id => byId(db.groups, id);
+  const tutorProfile = id => byId(db.tutorProfiles, id);
+
+  const examOf = sid => (subject(sid) || {}).exam || { parts: [], scale: [0] };
+  const partOf = (sid, number) => examOf(sid).parts.find(p => p.number === number) || null;
+  const maxPrimary = sid => examOf(sid).parts.reduce((s, p) => s + p.maxPoints, 0);
+  const scaled = (sid, primary) => {
+    const sc = examOf(sid).scale;
+    return sc[Math.max(0, Math.min(sc.length - 1, primary))] || 0;
+  };
 
   const studentUser = sid => user((student(sid) || {}).userId);
-  const enrollmentsOf = sid => db.enrollments.filter(e => e.studentId === sid);
-  const enrollmentIds = sid => enrollmentsOf(sid).map(e => e.id);
-  const goalOf = sid => db.goals.find(g => g.studentId === sid) || null;
-  const subscriptionOf = sid => db.subscriptions.find(s => s.studentId === sid) || null;
-  const tutorOf = sid => {
-    const e = enrollmentsOf(sid)[0];
-    if (!e) return null;
-    const tp = byId(db.tutorProfiles, e.tutorId);
-    return tp ? { profile: tp, user: user(tp.userId) } : null;
+  const tutorUser = tpId => user((tutorProfile(tpId) || {}).userId);
+
+  /* ── членство: привязки и группы ─────────────────────────────── */
+  const enrollmentsOf = (sid, subjectId) => db.enrollments
+    .filter(e => e.studentId === sid && (!subjectId || e.subjectId === subjectId));
+  const enrollmentIds = (sid, subjectId) => enrollmentsOf(sid, subjectId).map(e => e.id);
+
+  const groupsOf = (sid, subjectId) => db.groupMembers
+    .filter(m => m.studentId === sid && m.status === 'active')
+    .map(m => group(m.groupId))
+    .filter(g => g && (!subjectId || g.subjectId === subjectId));
+  const groupIds = (sid, subjectId) => groupsOf(sid, subjectId).map(g => g.id);
+
+  const membersOf = gid => db.groupMembers
+    .filter(m => m.groupId === gid && m.status === 'active')
+    .map(m => Object.assign({}, m, { profile: student(m.studentId), user: studentUser(m.studentId) }))
+    .filter(m => m.profile);
+
+  const groupsOfTutor = tpId => db.groups.filter(g => g.tutorId === tpId);
+
+  /* предметы, которые ученик реально изучает */
+  function subjectsOf(sid) {
+    const ids = new Set();
+    enrollmentsOf(sid).forEach(e => ids.add(e.subjectId));
+    groupsOf(sid).forEach(g => ids.add(g.subjectId));
+    return [...ids].map(subject).filter(Boolean);
+  }
+
+  /* все ученики репетитора — индивидуальные и групповые */
+  function studentsOfTutor(tpId) {
+    const ids = new Set(db.enrollments.filter(e => e.tutorId === tpId).map(e => e.studentId));
+    groupsOfTutor(tpId).forEach(g => membersOf(g.id).forEach(m => ids.add(m.studentId)));
+    return [...ids];
+  }
+
+  const tutorOf = (sid, subjectId) => {
+    const e = enrollmentsOf(sid, subjectId)[0];
+    if (e) return { profile: tutorProfile(e.tutorId), user: tutorUser(e.tutorId), via: 'enrollment' };
+    const g = groupsOf(sid, subjectId)[0];
+    if (g) return { profile: tutorProfile(g.tutorId), user: tutorUser(g.tutorId), via: 'group' };
+    return null;
   };
-  const childrenOf = parentUserId =>
-    db.guardians.filter(g => g.parentUserId === parentUserId && g.status === 'confirmed')
-      .map(g => g.studentId);
-  const studentsOfTutor = tutorProfileId =>
-    db.enrollments.filter(e => e.tutorId === tutorProfileId).map(e => e.studentId);
+
+  const childrenOf = parentUserId => db.guardians
+    .filter(g => g.parentUserId === parentUserId && g.status === 'confirmed')
+    .map(g => g.studentId);
 
   /* ── занятия ─────────────────────────────────────────────────── */
-  function lessonsOf(sid) {
-    const ids = enrollmentIds(sid);
-    return db.lessons.filter(l => ids.includes(l.enrollmentId))
+  function lessonsOf(sid, subjectId) {
+    const eids = enrollmentIds(sid, subjectId);
+    const gids = groupIds(sid, subjectId);
+    return db.lessons
+      .filter(l => (l.enrollmentId && eids.includes(l.enrollmentId)) ||
+                   (l.groupId && gids.includes(l.groupId)))
+      .filter(l => !subjectId || l.subjectId === subjectId)
       .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   }
-  function nextLesson(sid) {
+  function lessonsOfGroup(gid) {
+    return db.lessons.filter(l => l.groupId === gid)
+      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }
+  function nextLesson(sid, subjectId) {
     const now = Date.now();
-    return lessonsOf(sid).find(l => l.status === 'planned' && new Date(l.startsAt).getTime() > now - 90 * 60000) || null;
+    return lessonsOf(sid, subjectId)
+      .find(l => l.status === 'planned' && new Date(l.startsAt).getTime() > now - 90 * 60000) || null;
   }
   function lessonIsLive(l) {
     if (!l) return false;
     const s = new Date(l.startsAt).getTime();
     return Date.now() >= s - 10 * 60000 && Date.now() <= s + l.durationMin * 60000;
   }
-  function studentOfLesson(l) {
+  function studentsOfLesson(l) {
+    if (!l) return [];
+    if (l.groupId) return membersOf(l.groupId).map(m => m.studentId);
     const e = byId(db.enrollments, l.enrollmentId);
-    return e ? e.studentId : null;
+    return e ? [e.studentId] : [];
+  }
+  const isGroupLesson = l => !!(l && l.groupId);
+
+  /* статус посещения конкретным учеником */
+  function attendanceOf(lessonId, sid) {
+    const row = db.lessonAttendance.find(a => a.lessonId === lessonId && a.studentId === sid);
+    if (row) return row.status;
+    const l = lesson(lessonId);
+    if (!l) return null;
+    if (l.groupId) return l.status === 'done' ? 'present' : null;   /* нет строки — считаем как проведено */
+    return { done:'present', missed:'absent', moved:'moved', planned:null }[l.status] || null;
   }
 
   /* ── попытки ─────────────────────────────────────────────────── */
-  const attemptsOf = sid => db.attempts.filter(a => a.studentId === sid);
+  const attemptsOf = (sid, subjectId) => db.attempts
+    .filter(a => a.studentId === sid && (!subjectId || a.subjectId === subjectId));
   const attemptsOfAssignment = aid => db.attempts.filter(a => a.assignmentId === aid);
   const attemptsOfLesson = lid => db.attempts.filter(a => a.lessonId === lid);
   const attemptFor = (sid, taskId, scope) => db.attempts.find(a =>
@@ -70,14 +140,21 @@ window.Core = (function () {
   const isDone = a => a.status === 'checked' || a.status === 'submitted';
 
   /* ── домашние задания ────────────────────────────────────────── */
-  function assignmentsOf(sid) {
-    const ids = enrollmentIds(sid);
-    return db.assignments.filter(a => ids.includes(a.enrollmentId)).map(decorateAssignment)
+  function assignmentsOf(sid, subjectId) {
+    const eids = enrollmentIds(sid, subjectId);
+    const gids = groupIds(sid, subjectId);
+    return db.assignments
+      .filter(a => (a.enrollmentId && eids.includes(a.enrollmentId)) ||
+                   (a.groupId && gids.includes(a.groupId)))
+      .filter(a => !subjectId || a.subjectId === subjectId)
+      .map(a => decorateAssignment(a, sid))
       .sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
   }
 
-  function decorateAssignment(a) {
-    const att = attemptsOfAssignment(a.id);
+  /* прогресс считается по конкретному ученику: у группового задания
+     у каждого участника свои попытки */
+  function decorateAssignment(a, sid) {
+    const att = attemptsOfAssignment(a.id).filter(x => !sid || x.studentId === sid);
     const total = a.taskIds.length;
     const done = att.filter(isDone).length;
     const correct = att.filter(x => x.isCorrect === true).length;
@@ -94,37 +171,45 @@ window.Core = (function () {
 
     return Object.assign({}, a, {
       attempts: att, total, done, correct, awaiting, overdue, seconds, status,
+      isGroup: !!a.groupId,
+      groupTitle: a.groupId ? (group(a.groupId) || {}).title : null,
       score: done ? Math.round((correct / Math.max(done, 1)) * 100) : null,
       daysLeft: Math.ceil((new Date(a.dueAt).getTime() - Date.now()) / DAY),
     });
   }
 
   const ASSIGNMENT_STATUS = {
-    issued:      { label:'выдано',      cls:'b-grey'   },
-    in_progress: { label:'в работе',    cls:'b-blue'   },
-    submitted:   { label:'на проверке', cls:'b-amber'  },
-    checked:     { label:'проверено',   cls:'b-green'  },
-    overdue:     { label:'просрочено',  cls:'b-red'    },
+    issued:      { label:'выдано',      cls:'b-grey'  },
+    in_progress: { label:'в работе',    cls:'b-blue'  },
+    submitted:   { label:'на проверке', cls:'b-amber' },
+    checked:     { label:'проверено',   cls:'b-green' },
+    overdue:     { label:'просрочено',  cls:'b-red'   },
   };
 
-  /* ── проверка ответа (автопроверка из архитектуры) ───────────── */
+  /* ── автопроверка ────────────────────────────────────────────── */
   function normalize(v, t) {
     const s = String(v == null ? '' : v).trim();
     if (t.compare === 'ci') return s.toLowerCase().replace(/\s+/g, '');
     if (t.compare === 'set') return s.split(/[\s,;]+/).filter(Boolean).sort().join(' ');
     return s.replace(/\s+/g, ' ');
   }
+  const num = v => parseFloat(String(v).replace(',', '.').replace(/\s+/g, ''));
   function checkAnswer(t, value) {
-    if (!t || !t.autoCheck) return null;          /* ручная проверка */
+    if (!t || !t.autoCheck) return null;                 /* ручная проверка */
+    if (t.compare === 'numeric') {
+      const a = num(value), b = num(t.answer);
+      if (isNaN(a) || isNaN(b)) return false;
+      return Math.abs(a - b) <= (t.tolerance || 0);
+    }
     return normalize(value, t) === normalize(t.answer, t);
   }
 
   /* ── активность и серия ──────────────────────────────────────── */
   const dayKey = ts => { const x = new Date(ts); x.setHours(0, 0, 0, 0); return x.getTime(); };
 
-  function dailyActivity(sid, days) {
+  function dailyActivity(sid, days, subjectId) {
     const map = new Map();
-    attemptsOf(sid).forEach(a => {
+    attemptsOf(sid, subjectId).forEach(a => {
       const dt = attemptDate(a);
       if (!dt || !isDone(a)) return;
       const k = dayKey(dt);
@@ -141,8 +226,8 @@ window.Core = (function () {
     return out;
   }
 
-  function streak(sid) {
-    const days = dailyActivity(sid, 200);
+  function streak(sid, subjectId) {
+    const days = dailyActivity(sid, 200, subjectId);
     let n = 0;
     for (let i = days.length - 1; i >= 0; i--) {
       if (days[i].solved > 0) n++;
@@ -153,10 +238,10 @@ window.Core = (function () {
   }
 
   /* ── темы ────────────────────────────────────────────────────── */
-  function topicMastery(sid) {
+  function topicMastery(sid, subjectId) {
     const now = Date.now();
     const acc = new Map();
-    attemptsOf(sid).forEach(a => {
+    attemptsOf(sid, subjectId).forEach(a => {
       if (a.isCorrect === null || !isDone(a)) return;
       const t = task(a.taskId); if (!t) return;
       const dt = new Date(attemptDate(a)).getTime();
@@ -167,144 +252,298 @@ window.Core = (function () {
       else if (now - dt <= 60 * DAY) { cur.nPrev++; if (a.isCorrect) cur.okPrev++; }
       acc.set(t.topicId, cur);
     });
-    return db.topics.map(tp => {
-      const c = acc.get(tp.id);
-      if (!c || !c.n) return { topic: tp, hasData: false, percent: null, delta: null, n: 0 };
-      const pct = Math.round((c.ok / c.n) * 100);
-      const p30 = c.n30 ? (c.ok30 / c.n30) * 100 : null;
-      const pPrev = c.nPrev ? (c.okPrev / c.nPrev) * 100 : null;
-      return {
-        topic: tp, hasData: true, percent: pct, n: c.n, seconds: c.seconds,
-        delta: (p30 != null && pPrev != null) ? Math.round(p30 - pPrev) : null,
-      };
-    }).filter(x => x.hasData).sort((a, b) => a.percent - b.percent);
+    return db.topics
+      .filter(tp => !subjectId || tp.subjectId === subjectId)
+      .map(tp => {
+        const c = acc.get(tp.id);
+        if (!c || !c.n) return { topic: tp, hasData: false, percent: null, delta: null, n: 0 };
+        const p30 = c.n30 ? (c.ok30 / c.n30) * 100 : null;
+        const pPrev = c.nPrev ? (c.okPrev / c.nPrev) * 100 : null;
+        return {
+          topic: tp, hasData: true, percent: Math.round((c.ok / c.n) * 100), n: c.n, seconds: c.seconds,
+          delta: (p30 != null && pPrev != null) ? Math.round(p30 - pPrev) : null,
+        };
+      })
+      .filter(x => x.hasData)
+      .sort((a, b) => a.percent - b.percent);
   }
 
-  /* ── сводка по номерам заданий ЕГЭ ───────────────────────────────
-     Это и есть TaskNumberStats: «№5 — 20 ч, 77%».
-     ──────────────────────────────────────────────────────────────── */
-  function taskNumberStats(sid, days) {
+  /* ── сводка по номерам заданий (TaskNumberStats) ─────────────── */
+  function taskNumberStats(sid, days, subjectId) {
     const from = days ? Date.now() - days * DAY : 0;
     const acc = new Map();
-    attemptsOf(sid).forEach(a => {
+    attemptsOf(sid, subjectId).forEach(a => {
       if (!isDone(a) || a.isCorrect === null) return;
       const dt = attemptDate(a); if (!dt || new Date(dt).getTime() < from) return;
       const t = task(a.taskId); if (!t) return;
-      const cur = acc.get(t.egeNumber) || { n:0, ok:0, first:0, seconds:0 };
+      const key = t.subjectId + ':' + t.number;
+      const cur = acc.get(key) || { n:0, ok:0, first:0, seconds:0, subjectId:t.subjectId, number:t.number };
       cur.n++; cur.seconds += a.activeSeconds || 0;
       if (a.isCorrect) cur.ok++;
       if (a.firstTryCorrect) cur.first++;
-      acc.set(t.egeNumber, cur);
+      acc.set(key, cur);
     });
-    return [...acc.entries()].map(([egeNumber, c]) => ({
-      egeNumber,
-      topic: topic(db.egeTopic[egeNumber]),
-      attempts: c.n,
-      correct: c.ok,
+    return [...acc.values()].map(c => ({
+      subjectId: c.subjectId,
+      subject: subject(c.subjectId),
+      number: c.number,
+      topic: topic((partOf(c.subjectId, c.number) || {}).topicId),
+      maxPoints: (partOf(c.subjectId, c.number) || {}).maxPoints || 1,
+      attempts: c.n, correct: c.ok,
       percent: Math.round((c.ok / c.n) * 100),
       firstTryPercent: Math.round((c.first / c.n) * 100),
       seconds: c.seconds,
       avgSeconds: Math.round(c.seconds / c.n),
-    })).sort((a, b) => a.egeNumber - b.egeNumber);
+    })).sort((a, b) => a.subjectId.localeCompare(b.subjectId) || a.number - b.number);
   }
 
   /* ── посещаемость ────────────────────────────────────────────── */
-  function attendance(sid, days) {
+  function attendance(sid, days, subjectId) {
     const from = Date.now() - days * DAY;
-    const ls = lessonsOf(sid).filter(l => new Date(l.startsAt).getTime() >= from && new Date(l.startsAt).getTime() <= Date.now());
-    const c = { done:0, moved:0, missed:0, planned:0 };
-    ls.forEach(l => { c[l.status] = (c[l.status] || 0) + 1; });
-    const counted = c.done + c.moved + c.missed;
+    const ls = lessonsOf(sid, subjectId).filter(l => {
+      const t = new Date(l.startsAt).getTime();
+      return t >= from && t <= Date.now();
+    });
+    const c = { present:0, late:0, absent:0, moved:0 };
+    let minutes = 0;
+    ls.forEach(l => {
+      const st = attendanceOf(l.id, sid);
+      if (!st) return;
+      c[st] = (c[st] || 0) + 1;
+      if (st === 'present' || st === 'late') minutes += l.durationMin;
+    });
+    const counted = c.present + c.late + c.absent + c.moved;
+    const attended = c.present + c.late;
     return Object.assign(c, {
-      total: counted,
-      percent: counted ? Math.round((c.done / counted) * 100) : null,
-      hours: Math.round(ls.filter(l => l.status === 'done').reduce((s, l) => s + l.durationMin, 0) / 60),
+      done: attended, missed: c.absent, total: counted,
+      percent: counted ? Math.round((attended / counted) * 100) : null,
+      hours: Math.round(minutes / 60),
     });
   }
 
   /* ── пробники ────────────────────────────────────────────────── */
-  function mockSeries(sid) {
-    return db.mockExams.filter(m => m.studentId === sid)
+  function mockSeries(sid, subjectId) {
+    return db.mockExams
+      .filter(m => m.studentId === sid && (!subjectId || m.subjectId === subjectId))
       .map(m => {
         const primary = m.items.reduce((s, i) => s + i.got, 0);
         return {
-          id: m.id, variant: m.variant, date: new Date(m.date),
-          primary, primaryMax: m.items.reduce((s, i) => s + i.max, 0),
-          score: db.EGE_SCALE[primary] || 0,      /* тестовый балл, как на экзамене */
-          items: m.items,
+          id:m.id, variant:m.variant, subjectId:m.subjectId, date:new Date(m.date),
+          primary, primaryMax: maxPrimary(m.subjectId),
+          score: scaled(m.subjectId, primary), items: m.items,
         };
       })
       .sort((a, b) => a.date - b.date);
   }
 
-  /* ── KPI кабинета ────────────────────────────────────────────── */
-  function kpi(sid) {
-    const week = dailyActivity(sid, 7);
-    const solvedWeek = week.reduce((s, d) => s + d.solved, 0);
-    const secondsWeek = week.reduce((s, d) => s + d.seconds, 0);
-    const done = attemptsOf(sid).filter(a => isDone(a) && a.isCorrect !== null);
+  /* ── цели и KPI ──────────────────────────────────────────────── */
+  const goalOf = (sid, subjectId) => db.goals
+    .find(g => g.studentId === sid && (!subjectId || g.subjectId === subjectId)) || null;
+  const subscriptionOf = sid => db.subscriptions.find(s => s.studentId === sid) || null;
+
+  function goalProgress(sid, subjectId) {
+    const g = goalOf(sid, subjectId); if (!g) return null;
+    const series = mockSeries(sid, g.subjectId);
+    const cur = series.length ? series[series.length - 1].score : null;
+    return {
+      goal: g, subject: subject(g.subjectId),
+      current: cur, target: g.targetScore,
+      percent: cur == null ? null : Math.min(100, Math.round((cur / g.targetScore) * 100)),
+      left: cur == null ? null : Math.max(0, g.targetScore - cur),
+      daysToExam: Math.max(0, Math.ceil((new Date(g.examDate).getTime() - Date.now()) / DAY)),
+    };
+  }
+
+  function kpi(sid, subjectId) {
+    const week = dailyActivity(sid, 7, subjectId);
+    const done = attemptsOf(sid, subjectId).filter(a => isDone(a) && a.isCorrect !== null);
     const correct = done.filter(a => a.isCorrect).length;
-    const asg = assignmentsOf(sid);
-    const series = mockSeries(sid);
+    const asg = assignmentsOf(sid, subjectId);
+    const series = mockSeries(sid, subjectId);
     return {
       accuracy: done.length ? Math.round((correct / done.length) * 100) : null,
-      solvedWeek, secondsWeek,
-      streak: streak(sid),
+      solvedWeek: week.reduce((s, d) => s + d.solved, 0),
+      secondsWeek: week.reduce((s, d) => s + d.seconds, 0),
+      streak: streak(sid, subjectId),
       overdue: asg.filter(a => a.status === 'overdue').length,
       solvedTotal: done.length,
       lastMock: series.length ? series[series.length - 1] : null,
       mockDelta: series.length > 1 ? series[series.length - 1].score - series[series.length - 2].score : null,
-      hours: Math.round(attemptsOf(sid).reduce((s, a) => s + (a.activeSeconds || 0), 0) / 3600),
+      hours: Math.round(attemptsOf(sid, subjectId).reduce((s, a) => s + (a.activeSeconds || 0), 0) / 3600),
     };
   }
 
-  function goalProgress(sid) {
-    const g = goalOf(sid); if (!g) return null;
-    const series = mockSeries(sid);
-    const cur = series.length ? series[series.length - 1].score : null;
-    const examMs = new Date(g.examDate).getTime() - Date.now();
-    return {
-      goal: g, current: cur, target: g.targetScore,
-      percent: cur == null ? null : Math.min(100, Math.round((cur / g.targetScore) * 100)),
-      left: cur == null ? null : Math.max(0, g.targetScore - cur),
-      daysToExam: Math.max(0, Math.ceil(examMs / DAY)),
-    };
-  }
-
-  /* ── ближайшие дела для главной ──────────────────────────────── */
-  function upcoming(sid, limit) {
+  /* ── ближайшие дела ──────────────────────────────────────────── */
+  function upcoming(sid, limit, subjectId) {
     const rows = [];
-    assignmentsOf(sid).forEach(a => {
+    assignmentsOf(sid, subjectId).forEach(a => {
       if (a.status === 'checked') return;
       rows.push({ kind:'assignment', id:a.id, title:a.title, dueAt:a.dueAt, status:a.status, meta:a });
     });
-    const nl = nextLesson(sid);
-    if (nl) rows.push({ kind:'lesson', id:nl.id, title:'Занятие с репетитором', dueAt:nl.startsAt, status:'planned', meta:nl });
+    subjectsOf(sid).forEach(s => {
+      if (subjectId && s.id !== subjectId) return;
+      const nl = nextLesson(sid, s.id);
+      if (nl) rows.push({ kind:'lesson', id:nl.id, title:'Занятие · ' + s.name, dueAt:nl.startsAt, status:'planned', meta:nl });
+    });
     return rows.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt)).slice(0, limit || 5);
   }
 
-  /* ── очередь проверки для репетитора ─────────────────────────── */
-  function reviewQueue(tutorProfileId) {
-    const sids = studentsOfTutor(tutorProfileId);
+  /* ── репетитор ───────────────────────────────────────────────── */
+  function reviewQueue(tpId) {
     const out = [];
-    sids.forEach(sid => {
+    studentsOfTutor(tpId).forEach(sid => {
       attemptsOf(sid).filter(a => a.status === 'submitted').forEach(a => {
-        out.push({ attempt: a, task: task(a.taskId), student: student(sid),
-                   user: studentUser(sid),
+        out.push({ attempt:a, task:task(a.taskId), student:student(sid), user:studentUser(sid),
                    assignment: a.assignmentId ? assignment(a.assignmentId) : null });
       });
     });
     return out.sort((a, b) => new Date(a.attempt.submittedAt) - new Date(b.attempt.submittedAt));
   }
 
-  function tutorToday(tutorProfileId) {
-    const eids = db.enrollments.filter(e => e.tutorId === tutorProfileId).map(e => e.id);
+  function tutorToday(tpId) {
+    const gids = groupsOfTutor(tpId).map(g => g.id);
+    const eids = db.enrollments.filter(e => e.tutorId === tpId).map(e => e.id);
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
     const t1 = t0.getTime() + DAY;
-    return db.lessons.filter(l => eids.includes(l.enrollmentId))
+    return db.lessons
+      .filter(l => (l.groupId && gids.includes(l.groupId)) || (l.enrollmentId && eids.includes(l.enrollmentId)))
       .filter(l => { const t = new Date(l.startsAt).getTime(); return t >= t0.getTime() && t < t1; })
       .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   }
+
+  /* агрегат по группе — та же математика, просто по нескольким ученикам */
+  function groupStats(gid) {
+    const g = group(gid); if (!g) return null;
+    const members = membersOf(gid);
+    const rows = members.map(m => {
+      const k = kpi(m.studentId, g.subjectId);
+      const att = attendance(m.studentId, 60, g.subjectId);
+      const weak = topicMastery(m.studentId, g.subjectId)[0] || null;
+      return { member:m, kpi:k, attendance:att, weak };
+    });
+    const withAcc = rows.filter(r => r.kpi.accuracy != null);
+    const withAtt = rows.filter(r => r.attendance.percent != null);
+    return {
+      group: g, subject: subject(g.subjectId), members: rows,
+      size: members.length, capacity: g.capacity,
+      avgAccuracy: withAcc.length ? Math.round(withAcc.reduce((s, r) => s + r.kpi.accuracy, 0) / withAcc.length) : null,
+      avgAttendance: withAtt.length ? Math.round(withAtt.reduce((s, r) => s + r.attendance.percent, 0) / withAtt.length) : null,
+      solvedWeek: rows.reduce((s, r) => s + r.kpi.solvedWeek, 0),
+      overdue: rows.reduce((s, r) => s + r.kpi.overdue, 0),
+      lessons: lessonsOfGroup(gid),
+      assignments: db.assignments.filter(a => a.groupId === gid),
+    };
+  }
+
+  /* ── приглашения ─────────────────────────────────────────────────
+     Одна таблица на три сценария: индивидуальная привязка, вступление
+     в группу, доступ родителя. Приняли ссылку — создаётся Enrollment
+     или GroupMember, история сохраняется.
+     ──────────────────────────────────────────────────────────────── */
+  const inviteByCode = code => db.invites
+    .find(i => String(i.code).toUpperCase() === String(code || '').trim().toUpperCase()) || null;
+
+  function inviteState(inv) {
+    if (!inv) return { ok:false, reason:'not_found', label:'Ссылка не найдена' };
+    if (inv.status === 'revoked') return { ok:false, reason:'revoked', label:'Приглашение отозвано' };
+    if (inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now())
+      return { ok:false, reason:'expired', label:'Срок действия истёк' };
+    if (inv.maxUses != null && inv.usedCount >= inv.maxUses)
+      return { ok:false, reason:'used_up', label:'Лимит переходов исчерпан' };
+    if (inv.kind === 'group') {
+      const g = group(inv.groupId);
+      if (!g) return { ok:false, reason:'no_group', label:'Группа не найдена' };
+      if (membersOf(g.id).length >= g.capacity)
+        return { ok:false, reason:'full', label:'В группе нет свободных мест' };
+    }
+    return { ok:true, reason:'active', label:'Приглашение действительно' };
+  }
+
+  function inviteTarget(inv) {
+    if (!inv) return null;
+    return {
+      kind: inv.kind,
+      subject: inv.subjectId ? subject(inv.subjectId) : null,
+      tutor: inv.tutorId ? { profile: tutorProfile(inv.tutorId), user: tutorUser(inv.tutorId) } : null,
+      group: inv.groupId ? group(inv.groupId) : null,
+      student: inv.studentId ? { profile: student(inv.studentId), user: studentUser(inv.studentId) } : null,
+      seatsLeft: inv.maxUses == null ? null : Math.max(0, inv.maxUses - inv.usedCount),
+    };
+  }
+
+  /* уже состоит? второй раз присоединяться незачем */
+  function inviteAlreadyJoined(inv, sid) {
+    if (!inv) return false;
+    if (inv.kind === 'group') return groupIds(sid).includes(inv.groupId);
+    if (inv.kind === 'enrollment')
+      return enrollmentsOf(sid, inv.subjectId).some(e => e.tutorId === inv.tutorId && e.status === 'active');
+    if (inv.kind === 'guardian') return true;
+    return false;
+  }
+
+  function acceptInvite(code, sid) {
+    const inv = inviteByCode(code);
+    const st = inviteState(inv);
+    if (!st.ok) return { ok:false, error: st.label };
+    if (inviteAlreadyJoined(inv, sid)) return { ok:false, error:'Вы уже присоединены по этой ссылке' };
+
+    if (inv.kind === 'enrollment') {
+      db.enrollments.push({
+        id: 'e-' + sid + '-' + inv.subjectId + '-' + Date.now().toString(36),
+        studentId: sid, tutorId: inv.tutorId, subjectId: inv.subjectId,
+        status: 'active', startedAt: new Date().toISOString().slice(0, 10),
+        source: 'invite-accepted', inviteId: inv.id,
+      });
+    } else if (inv.kind === 'group') {
+      db.groupMembers.push({
+        groupId: inv.groupId, studentId: sid,
+        joinedAt: new Date().toISOString().slice(0, 10),
+        status: 'active', source: 'invite-accepted', inviteId: inv.id,
+      });
+      /* групповые задания разворачиваются на нового участника */
+      db.assignments.filter(a => a.groupId === inv.groupId).forEach(a => {
+        a.taskIds.forEach(taskId => ensureAttempt(sid, taskId, { assignmentId: a.id }));
+      });
+    } else if (inv.kind === 'guardian') {
+      return { ok:false, error:'Ссылку для родителя принимает родитель, а не ученик' };
+    }
+
+    inv.usedCount += 1;
+    if (inv.maxUses != null && inv.usedCount >= inv.maxUses) inv.status = 'used_up';
+    DB.save();
+    return { ok:true, invite: inv, target: inviteTarget(inv) };
+  }
+
+  function createInvite(opts) {
+    const rnd = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+    const inv = {
+      id: 'inv-' + Date.now().toString(36),
+      code: (opts.prefix || 'NEW') + '-' + rnd(),
+      kind: opts.kind || 'enrollment',
+      tutorId: opts.tutorId || null, subjectId: opts.subjectId || null,
+      groupId: opts.groupId || null, studentId: opts.studentId || null,
+      createdBy: opts.createdBy || null,
+      createdAt: new Date().toISOString().slice(0, 10),
+      expiresAt: opts.expiresAt || null,
+      maxUses: opts.maxUses == null ? null : opts.maxUses,
+      usedCount: 0, status: 'active', note: opts.note || '',
+    };
+    db.invites.push(inv);
+    DB.save();
+    return inv;
+  }
+
+  function revokeInvite(id) {
+    const inv = byId(db.invites, id);
+    if (inv) { inv.status = 'revoked'; DB.save(); }
+    return inv;
+  }
+
+  const invitesOfTutor = tpId => db.invites.filter(i => i.tutorId === tpId);
+  const inviteUrl = code => {
+    const base = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '');
+    return base + 'invite.html?code=' + encodeURIComponent(code);
+  };
 
   /* ── мутации ─────────────────────────────────────────────────── */
   function saveAttempt(id, patch) {
@@ -316,14 +555,16 @@ window.Core = (function () {
   function ensureAttempt(sid, taskId, scope) {
     let a = attemptFor(sid, taskId, scope);
     if (a) return a;
+    const t = task(taskId);
     a = {
       id: 'at-' + Math.random().toString(36).slice(2, 9),
-      taskId, studentId: sid,
+      taskId, studentId: sid, subjectId: t ? t.subjectId : null,
       context: scope && scope.lessonId ? 'lesson' : 'homework',
       lessonId: (scope && scope.lessonId) || null,
       assignmentId: (scope && scope.assignmentId) || null,
-      code: '', answer: '', tries: 0, isCorrect: null, firstTryCorrect: null,
-      activeSeconds: 0, status: 'issued', startedAt: null, submittedAt: null,
+      groupId: (scope && scope.groupId) || null,
+      code:'', answer:'', tries:0, isCorrect:null, firstTryCorrect:null,
+      activeSeconds:0, status:'issued', startedAt:null, submittedAt:null,
     };
     db.attempts.push(a); DB.save();
     return a;
@@ -338,8 +579,7 @@ window.Core = (function () {
   const fmtDateTime = ts => fmtDate(ts) + ', ' + fmtTime(ts);
 
   function relDay(ts) {
-    const k = dayKey(ts), t = dayKey(Date.now());
-    const diff = Math.round((k - t) / DAY);
+    const diff = Math.round((dayKey(ts) - dayKey(Date.now())) / DAY);
     if (diff === 0) return 'сегодня';
     if (diff === 1) return 'завтра';
     if (diff === -1) return 'вчера';
@@ -368,19 +608,22 @@ window.Core = (function () {
     const { h, m } = splitDur(sec);
     return h ? h + ' ч ' + pad(m) : m + ' мин';
   }
-  const fmtDurSplit = splitDur;
   const fmtMoney = n => new Intl.NumberFormat(RU).format(n) + ' ₽';
 
   return {
     db, DAY,
-    task, topic, user, student, lesson, assignment, attempt,
-    studentUser, enrollmentsOf, goalOf, subscriptionOf, tutorOf, childrenOf, studentsOfTutor,
-    lessonsOf, nextLesson, lessonIsLive, studentOfLesson,
+    task, topic, user, student, lesson, assignment, attempt, subject, group, tutorProfile,
+    examOf, partOf, maxPrimary, scaled,
+    studentUser, tutorUser, enrollmentsOf, groupsOf, membersOf, groupsOfTutor,
+    subjectsOf, studentsOfTutor, tutorOf, childrenOf, goalOf, subscriptionOf,
+    lessonsOf, lessonsOfGroup, nextLesson, lessonIsLive, studentsOfLesson, isGroupLesson, attendanceOf,
     attemptsOf, attemptsOfAssignment, attemptsOfLesson, attemptFor, attemptDate, isDone,
     assignmentsOf, decorateAssignment, ASSIGNMENT_STATUS,
     checkAnswer, dailyActivity, streak, topicMastery, taskNumberStats,
-    attendance, mockSeries, kpi, goalProgress, upcoming, reviewQueue, tutorToday,
+    attendance, mockSeries, kpi, goalProgress, upcoming, reviewQueue, tutorToday, groupStats,
+    inviteByCode, inviteState, inviteTarget, inviteAlreadyJoined, acceptInvite,
+    createInvite, revokeInvite, invitesOfTutor, inviteUrl,
     saveAttempt, ensureAttempt,
-    fmtTime, fmtDate, fmtDateFull, fmtDateTime, relDay, plural, fmtDur, fmtDurShort, fmtDurSplit, fmtMoney,
+    fmtTime, fmtDate, fmtDateFull, fmtDateTime, relDay, plural, fmtDur, fmtDurShort, fmtMoney,
   };
 })();

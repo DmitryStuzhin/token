@@ -14,37 +14,127 @@
 (function () {
   const C = Core;
 
-  /* ── привязки ученик ↔ репетитор ────────────────────────────── */
+  /* ── предметы ───────────────────────────────────────────────── */
+  function subjectsHTML() {
+    const rows = C.db.subjects.map(s => {
+      const ex = s.exam;
+      const tasks = C.db.tasks.filter(t => t.subjectId === s.id);
+      const tops = C.db.topics.filter(t => t.subjectId === s.id);
+      const enr = C.db.enrollments.filter(e => e.subjectId === s.id && e.status === 'active');
+      const grp = C.db.groups.filter(g => g.subjectId === s.id);
+      return `<tr>
+        <td>${UI.subjectTag(s)} <b>${UI.esc(s.name)}</b></td>
+        <td class="muted small">${UI.esc(ex.name)} · ${ex.parts.length} заданий · макс ${C.maxPrimary(s.id)} первичных</td>
+        <td class="num">${tops.length}</td>
+        <td class="num">${tasks.length}</td>
+        <td class="num">${enr.length}</td>
+        <td class="num">${grp.length}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="subjects">
+      <div class="head"><div><h2>Предметы</h2>
+        <div class="hint">Номера заданий, максимумы и шкала перевода лежат в предмете — код о них не знает</div></div>
+        <button class="btn sm act">Новый предмет</button></div>
+      <table><thead><tr>
+        <th>Предмет</th><th>Экзамен</th><th class="num">Тем</th><th class="num">Задач</th>
+        <th class="num">Учеников</th><th class="num">Групп</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="note n-blue" style="margin-top:14px">
+        Добавить физику = добавить объект в <code>subjects</code> с массивом <code>exam.parts</code>
+        и шкалой перевода. Ни одна страница при этом не меняется: переключатель предмета,
+        статистика и сводка по номерам собираются из данных.
+      </div></section>`;
+  }
+
+  /* ── привязки ───────────────────────────────────────────────── */
   function linksHTML() {
     const rows = C.db.enrollments.map(e => {
       const u = C.studentUser(e.studentId);
-      const tp = C.db.tutorProfiles.find(x => x.id === e.tutorId);
-      const tu = C.user(tp.userId);
-      const sub = C.subscriptionOf(e.studentId);
-      const lessons = C.lessonsOf(e.studentId).filter(l => l.status === 'done').length;
+      const tu = C.tutorUser(e.tutorId);
+      const lessons = C.db.lessons.filter(l => l.enrollmentId === e.id && l.status === 'done').length;
       return `<tr>
         <td><div style="display:flex;align-items:center;gap:10px">${UI.avatar(u.name)}
-          <div><b>${UI.esc(u.name)}</b><div class="muted small">${C.student(e.studentId).grade} класс · ${UI.esc(C.student(e.studentId).school)}</div></div></div></td>
+          <div><b>${UI.esc(u.name)}</b>
+            <div class="muted small">${C.student(e.studentId).grade} класс</div></div></div></td>
         <td>${UI.esc(tu.name)}</td>
-        <td class="muted small">${UI.esc((C.db.subjects.find(s => s.id === e.subjectId) || {}).name || '')}</td>
-        <td>${e.status === 'active' ? '<span class="badge b-green">активна</span>' : '<span class="badge b-grey">на паузе</span>'}</td>
+        <td>${UI.subjectTag(C.subject(e.subjectId))}</td>
+        <td>${e.status === 'active' ? '<span class="badge b-green">активна</span>' : '<span class="badge b-grey">пауза</span>'}</td>
+        <td class="muted small">${e.source === 'invite' || e.source === 'invite-accepted'
+          ? '<span class="tag">по ссылке</span>' : 'заведена админом'}</td>
         <td class="muted small">${new Date(e.startedAt).toLocaleDateString('ru-RU')}</td>
         <td class="num muted">${lessons}</td>
-        <td class="num muted">${sub ? sub.lessonsLeft : '—'}</td>
-        <td class="num"><button class="btn sm ghost act" data-act="link">Изменить</button></td>
+        <td class="num"><button class="btn sm ghost act">Изменить</button></td>
       </tr>`;
     }).join('');
-    return `<section class="card" id="links">
+    return `<section class="card" id="links" style="margin-top:14px">
       <div class="head"><div><h2>Привязки ученик ↔ репетитор</h2>
-        <div class="hint">Таблица Enrollment — через неё висят занятия, д/з и статистика</div></div>
-        <button class="btn sm act" data-act="link">Новая привязка</button></div>
+        <div class="hint">Enrollment. Один ученик может иметь несколько привязок — по одной на предмет</div></div></div>
       <table><thead><tr>
         <th>Ученик</th><th>Репетитор</th><th>Предмет</th><th>Статус</th>
-        <th>С</th><th class="num">Занятий</th><th class="num">Остаток</th><th></th>
+        <th>Откуда</th><th>С</th><th class="num">Занятий</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table>
       <div class="note n-grey" style="margin-top:14px">
-        Смена репетитора не удаляет запись, а закрывает её и создаёт новую —
-        иначе потеряется история статистики ученика. Все действия пишутся в AuditLog.
+        Смена репетитора закрывает запись и создаёт новую — история статистики сохраняется.
+        Большинство привязок теперь создаётся не здесь, а по ссылке-приглашению.
+      </div></section>`;
+  }
+
+  /* ── группы ─────────────────────────────────────────────────── */
+  function groupsHTML() {
+    const rows = C.db.groups.map(g => {
+      const gs = C.groupStats(g.id);
+      const tu = C.tutorUser(g.tutorId);
+      return `<tr>
+        <td><b>${UI.esc(g.title)}</b><div class="muted small">${g.level} · ${g.schedule}</div></td>
+        <td>${UI.subjectTag(C.subject(g.subjectId))}</td>
+        <td class="muted small">${UI.esc(tu.name)}</td>
+        <td class="num">${gs.size} / ${g.capacity}</td>
+        <td class="num">${gs.lessons.length}</td>
+        <td class="num">${gs.assignments.length}</td>
+        <td>${g.status === 'active' ? '<span class="badge b-green">идёт</span>' : '<span class="badge b-amber">набор</span>'}</td>
+        <td class="num"><a class="btn sm ghost" href="group.html?group=${g.id}">Открыть</a></td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="groups" style="margin-top:14px">
+      <div class="head"><div><h2>Группы</h2>
+        <div class="hint">Group + GroupMember. Занятие и д/з адресуются группе, статистика остаётся по ученику</div></div>
+        <button class="btn sm act">Новая группа</button></div>
+      <table><thead><tr>
+        <th>Группа</th><th>Предмет</th><th>Репетитор</th><th class="num">Состав</th>
+        <th class="num">Занятий</th><th class="num">Заданий</th><th>Статус</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  /* ── приглашения ────────────────────────────────────────────── */
+  function invitesHTML() {
+    const rows = C.db.invites.map(i => {
+      const st = C.inviteState(i), t = C.inviteTarget(i);
+      const left = i.maxUses == null ? '∞' : Math.max(0, i.maxUses - i.usedCount);
+      const kind = { enrollment:'индивид.', group:'в группу', guardian:'родителю' }[i.kind] || i.kind;
+      return `<tr>
+        <td><code style="font-family:var(--mono);font-size:13px">${UI.esc(i.code)}</code>
+          <div class="muted small">${UI.esc(i.note || '')}</div></td>
+        <td><span class="badge ${i.kind === 'group' ? 'b-violet' : i.kind === 'guardian' ? 'b-amber' : 'b-blue'}">${kind}</span></td>
+        <td class="muted small">${t.group ? UI.esc(t.group.title)
+          : t.subject ? UI.esc(t.subject.name)
+          : t.student ? UI.esc(t.student.user.name) : '—'}</td>
+        <td class="muted small">${t.tutor ? UI.esc(t.tutor.user.name) : '—'}</td>
+        <td class="num">${i.usedCount}</td>
+        <td class="num">${left}</td>
+        <td class="muted small">${i.expiresAt ? C.fmtDate(i.expiresAt) : 'бессрочно'}</td>
+        <td>${st.ok ? '<span class="badge b-green">активна</span>'
+             : `<span class="badge b-grey">${UI.esc(st.label)}</span>`}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="invites" style="margin-top:14px">
+      <div class="head"><div><h2>Приглашения</h2>
+        <div class="hint">Одна таблица на три сценария: привязка, группа, доступ родителя</div></div></div>
+      <table><thead><tr>
+        <th>Код</th><th>Тип</th><th>Куда</th><th>Репетитор</th>
+        <th class="num">Переходов</th><th class="num">Осталось</th><th>До</th><th>Статус</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="note n-grey" style="margin-top:14px">
+        Ссылки выпускает репетитор у себя в кабинете. Админ видит все и может отозвать.
       </div></section>`;
   }
 
@@ -56,7 +146,8 @@
       const low = s.lessonsLeft <= 1;
       return `<tr>
         <td><b>${UI.esc(u.name)}</b></td>
-        <td class="muted small">${UI.esc(payer ? payer.name : '—')}${payer && payer.role === 'parent' ? ' <span class="tag">родитель</span>' : ''}</td>
+        <td class="muted small">${UI.esc(payer ? payer.name : '—')}${
+          payer && payer.role === 'parent' ? ' <span class="tag">родитель</span>' : ''}</td>
         <td>${UI.esc(s.plan)}</td>
         <td class="num" style="color:${low ? 'var(--red)' : 'inherit'}"><b>${s.lessonsLeft}</b> / ${s.lessonsTotal}</td>
         <td class="num">${C.fmtMoney(s.price)}</td>
@@ -66,7 +157,7 @@
     }).join('');
     return `<section class="card" id="subs" style="margin-top:14px">
       <div class="head"><div><h2>Абонементы</h2>
-        <div class="hint">Плательщик хранится отдельно от ученика — <code>payer_user_id</code></div></div>
+        <div class="hint">Плательщик отдельно от ученика — <code>payer_user_id</code></div></div>
         <span class="badge b-amber">платежи не подключены</span></div>
       <table><thead><tr>
         <th>Ученик</th><th>Плательщик</th><th>Тариф</th><th class="num">Осталось</th>
@@ -76,24 +167,36 @@
 
   /* ── банк задач и импорт ────────────────────────────────────── */
   function bankHTML() {
-    const byNum = {};
-    C.db.tasks.forEach(t => { byNum[t.egeNumber] = (byNum[t.egeNumber] || 0) + 1; });
-    const covered = Object.keys(byNum).length;
-    const auto = C.db.tasks.filter(t => t.autoCheck).length;
-
-    const grid = Array.from({ length: 27 }, (_, i) => i + 1).map(n => {
-      const c = byNum[n] || 0;
-      return `<div style="text-align:center">
-        <div style="height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;
-          font-weight:650;font-size:13px;
-          background:${c ? 'var(--brand-soft)' : 'var(--bg)'};
-          color:${c ? 'var(--brand)' : 'var(--muted)'};
-          border:1px solid ${c ? 'transparent' : 'var(--line)'}">${c || '—'}</div>
-        <div class="muted" style="font-size:10.5px;margin-top:3px">№${n}</div></div>`;
+    const bySubject = C.db.subjects.map(s => {
+      const parts = s.exam.parts;
+      const tasks = C.db.tasks.filter(t => t.subjectId === s.id);
+      const byNum = {};
+      tasks.forEach(t => { byNum[t.number] = (byNum[t.number] || 0) + 1; });
+      const covered = Object.keys(byNum).length;
+      const grid = parts.map(p => {
+        const c = byNum[p.number] || 0;
+        return `<div style="text-align:center">
+          <div style="height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+            font-weight:650;font-size:13px;
+            background:${c ? 'var(--brand-soft)' : 'var(--bg)'};
+            color:${c ? 'var(--brand)' : 'var(--muted)'};
+            border:1px solid ${c ? 'transparent' : 'var(--line)'}">${c || '—'}</div>
+          <div class="muted" style="font-size:10.5px;margin-top:3px">№${p.number}</div></div>`;
+      }).join('');
+      return `<div style="margin-bottom:22px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+          <b>${UI.subjectTag(s)} ${UI.esc(s.name)}</b>
+          <span class="muted small">${tasks.length} ${C.plural(tasks.length,'задача','задачи','задач')} ·
+            покрыто ${covered} из ${parts.length} номеров ·
+            ${tasks.filter(t => t.autoCheck).length} с автопроверкой</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(${Math.min(parts.length, 14)},1fr);gap:6px">${grid}</div>
+      </div>`;
     }).join('');
 
     const rows = C.db.tasks.map(t => `<tr>
-      <td><b>№${t.egeNumber}</b></td>
+      <td>${UI.subjectTag(C.subject(t.subjectId))}</td>
+      <td><b>№${t.number}</b></td>
       <td>${UI.esc(t.title)}</td>
       <td class="muted small">${UI.esc((C.topic(t.topicId) || {}).name || '')}</td>
       <td>${t.autoCheck ? '<span class="badge b-green">авто</span>' : '<span class="badge b-amber">вручную</span>'}</td>
@@ -102,38 +205,32 @@
     </tr>`).join('');
 
     const shape = JSON.stringify([{
-      id:'q-17-100', egeNumber:17, topicId:'t-str', title:'Заголовок для списка',
-      statement:'Полный текст условия…', answer:'128 51872',
-      answerType:'set', compare:'set', autoCheck:true, difficulty:3, source:'kompege',
+      id:'q-17-100', subjectId:'inf', number:17, topicId:'t-str',
+      title:'Заголовок для списка', statement:'Полный текст условия…',
+      answer:'128 51872', answerType:'set', compare:'set',
+      autoCheck:true, difficulty:3, source:'kompege',
     }], null, 2);
 
     return `<section class="card" id="bank" style="margin-top:14px">
       <div class="head"><div><h2>Банк задач</h2>
-        <div class="hint">${C.db.tasks.length} ${C.plural(C.db.tasks.length,'задача','задачи','задач')} ·
-          ${covered} из 27 номеров · ${auto} с автопроверкой</div></div></div>
-
-      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-bottom:20px">${grid}</div>
-
+        <div class="hint">Покрытие по номерам считается из <code>subject.exam.parts</code> — у каждого предмета своя сетка</div></div></div>
+      ${bySubject}
       <table><thead><tr>
-        <th>Номер</th><th>Задача</th><th>Тема</th><th>Проверка</th><th>Тип / сверка</th><th>Источник</th>
+        <th>Предмет</th><th>Номер</th><th>Задача</th><th>Тема</th><th>Проверка</th><th>Тип / сверка</th><th>Источник</th>
       </tr></thead><tbody>${rows}</tbody></table>
     </section>
 
     <section class="card" style="margin-top:14px">
       <div class="head"><div><h2>Импорт заданий</h2>
-        <div class="hint">Парсер не написан — но приёмник готов и проверяет формат</div></div></div>
-
+        <div class="hint">Парсер не написан — приёмник готов и проверяет формат</div></div></div>
       <div class="note n-blue" style="margin-bottom:14px">
-        Парсер должен отдавать массив объектов ровно такой формы. Вставьте JSON —
-        он провалидируется и попадёт в тот же банк, из которого работают все экраны.
-        Ничего в интерфейсе менять не придётся.
+        Парсер отдаёт массив объектов такой формы. Валидируется предмет, номер задания
+        в пределах сетки этого предмета и уникальность id.
       </div>
-
       <div class="editor" style="margin-bottom:12px">
         <div class="ehead"><span>ожидаемый формат</span><span>JSON</span></div>
         <pre style="min-height:0">${UI.esc(shape)}</pre>
       </div>
-
       <textarea id="imp" spellcheck="false" placeholder="вставьте сюда JSON-массив задач"
         style="width:100%;min-height:130px;padding:12px 14px;border:1.5px solid var(--line);border-radius:11px;
                background:var(--panel);color:var(--text);font:13px/1.6 var(--mono);resize:vertical"></textarea>
@@ -143,28 +240,30 @@
         <button class="btn" id="imp-run">Импортировать</button>
       </div>
       <div id="imp-out"></div>
-
       <div class="note n-grey" style="margin-top:14px">
-        Обязательные поля: <code>id</code>, <code>egeNumber</code>, <code>title</code>,
-        <code>statement</code>. Если нет <code>topicId</code> — проставится по номеру задания.
-        Если нет <code>answer</code> — задача уйдёт на ручную проверку.
+        Обязательные: <code>id</code>, <code>subjectId</code>, <code>number</code>,
+        <code>title</code>, <code>statement</code>.
+        Нет <code>topicId</code> — подставится по сетке предмета.
+        Нет <code>answer</code> — задача уйдёт на ручную проверку.
       </div>
     </section>`;
   }
 
   UI.page({
-    active: (location.hash || '#links').slice(1),
-    head:{ title:'Администрирование', sub:'Привязки, абонементы, банк задач' },
-    body: linksHTML() + subsHTML() + bankHTML(),
+    active:(location.hash || '#links').slice(1),
+    head:{ title:'Администрирование',
+      sub:`${C.db.subjects.length} ${C.plural(C.db.subjects.length,'предмет','предмета','предметов')} ·
+           ${C.db.groups.length} ${C.plural(C.db.groups.length,'группа','группы','групп')} ·
+           ${C.db.enrollments.length} привязок` },
+    body: subjectsHTML() + linksHTML() + groupsHTML() + invitesHTML() + subsHTML() + bankHTML(),
   });
 
   document.querySelectorAll('.act').forEach(b => b.addEventListener('click', () =>
-    alert('Форма редактирования привязки в прототипе не собрана.\n\n' +
-          'Здесь меняется Enrollment: ученик, репетитор, предмет, статус. ' +
-          'Старая запись закрывается, а не удаляется.')));
+    alert('Форма в прототипе не собрана.\n\nЗдесь заводится запись в соответствующей таблице: ' +
+          'Subject / Enrollment / Group. Старые записи закрываются, а не удаляются.')));
 
   /* ── приёмник импорта ───────────────────────────────────────── */
-  const REQUIRED = ['id','egeNumber','title','statement'];
+  const REQUIRED = ['id','subjectId','number','title','statement'];
 
   function validate(arr) {
     const errors = [];
@@ -173,27 +272,29 @@
     const seen = new Set();
     arr.forEach((t, i) => {
       REQUIRED.forEach(f => { if (t[f] == null || t[f] === '') errors.push(`[${i}] нет поля ${f}`); });
-      if (t.egeNumber != null && !(t.egeNumber >= 1 && t.egeNumber <= 27))
-        errors.push(`[${i}] egeNumber вне 1..27: ${t.egeNumber}`);
+      const subj = t.subjectId ? C.subject(t.subjectId) : null;
+      if (t.subjectId && !subj) errors.push(`[${i}] неизвестный subjectId «${t.subjectId}»`);
+      if (subj && t.number != null && !C.partOf(t.subjectId, +t.number))
+        errors.push(`[${i}] в предмете «${subj.name}» нет задания №${t.number}`);
       if (t.id && have.has(t.id)) errors.push(`[${i}] id «${t.id}» уже есть в банке`);
       if (t.id && seen.has(t.id)) errors.push(`[${i}] id «${t.id}» повторяется в файле`);
       if (t.id) seen.add(t.id);
-      if (t.compare && !['exact','ci','set'].includes(t.compare))
-        errors.push(`[${i}] compare должен быть exact | ci | set`);
+      if (t.compare && !['exact','ci','set','numeric'].includes(t.compare))
+        errors.push(`[${i}] compare должен быть exact | ci | set | numeric`);
     });
     return errors;
   }
 
   function normalizeTask(t) {
+    const part = C.partOf(t.subjectId, +t.number) || {};
     return {
-      id: String(t.id),
-      egeNumber: +t.egeNumber,
-      topicId: t.topicId || C.db.egeTopic[+t.egeNumber] || 't-num',
-      title: String(t.title),
-      statement: String(t.statement),
+      id: String(t.id), subjectId: t.subjectId, number: +t.number,
+      topicId: t.topicId || part.topicId || null,
+      title: String(t.title), statement: String(t.statement),
       answer: t.answer == null ? '' : String(t.answer),
       answerType: t.answerType || 'string',
       compare: t.compare || 'exact',
+      tolerance: t.tolerance || 0,
       autoCheck: t.autoCheck != null ? !!t.autoCheck : !!(t.answer && String(t.answer).trim()),
       difficulty: t.difficulty || 2,
       source: t.source || 'import',
@@ -202,13 +303,13 @@
 
   document.getElementById('imp-demo').addEventListener('click', () => {
     document.getElementById('imp').value = JSON.stringify([{
-      id:'q-18-1', egeNumber:18, title:'Робот и таблица', topicId:'t-dp',
+      id:'q-18-1', subjectId:'inf', number:18, title:'Робот и таблица', topicId:'t-dp',
       statement:'Робот идёт по таблице из левого верхнего угла в правый нижний, собирая монеты. Найдите максимум и минимум.',
       answer:'143 61', answerType:'set', compare:'set', autoCheck:true, difficulty:2, source:'import-demo',
     }, {
-      id:'q-25-1', egeNumber:25, title:'Делители числа', topicId:'t-num',
-      statement:'Найдите все натуральные числа в диапазоне, у которых ровно четыре делителя. Выведите числа по возрастанию.',
-      answer:'1004 1006', answerType:'set', compare:'set', autoCheck:true, difficulty:2, source:'import-demo',
+      id:'m-13-1', subjectId:'math', number:13, title:'Сечение призмы',
+      statement:'В правильной шестиугольной призме постройте сечение через три точки и найдите его площадь.',
+      answer:'', autoCheck:false, difficulty:3, source:'import-demo',
     }], null, 2);
   });
 
@@ -219,7 +320,6 @@
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch (e) { out.innerHTML = `<div class="verdict v-no">JSON не разобрался: ${UI.esc(e.message)}</div>`; return; }
-
     const errors = validate(parsed);
     if (errors.length) {
       out.innerHTML = `<div class="verdict v-no">Импорт отклонён, ${errors.length}
@@ -229,9 +329,14 @@
     parsed.map(normalizeTask).forEach(t => C.db.tasks.push(t));
     DB.save();
     out.innerHTML = `<div class="verdict v-ok">Импортировано ${parsed.length}
-      ${C.plural(parsed.length,'задача','задачи','задач')}. Они уже доступны репетитору
-      для прикрепления к занятию. <a href="admin.html#bank">обновить</a></div>`;
+      ${C.plural(parsed.length,'задача','задачи','задач')} — уже доступны репетитору.
+      <a href="admin.html#bank" onclick="location.reload()">обновить</a></div>`;
   });
+
+  if (location.hash) {
+    const el = document.querySelector(location.hash);
+    if (el) el.scrollIntoView({ block:'start' });
+  }
 })();
 </script>
 </body>

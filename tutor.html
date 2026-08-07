@@ -13,24 +13,24 @@
 <script>
 (function () {
   const C = Core, T = UI.TUTOR;
-  const tp = C.db.tutorProfiles.find(x => x.id === T);
+  const tp = C.tutorProfile(T);
   const me = C.user(tp.userId);
   const today = C.tutorToday(T);
   const queue = C.reviewQueue(T);
   const sids = C.studentsOfTutor(T);
+  const groups = C.groupsOfTutor(T);
+  const invites = C.invitesOfTutor(T);
 
   function kpiHTML() {
-    const overdueAll = sids.reduce((s, sid) =>
-      s + C.assignmentsOf(sid).filter(a => a.status === 'overdue').length, 0);
-    const solvedWeek = sids.reduce((s, sid) =>
-      s + C.dailyActivity(sid, 7).reduce((x, d) => x + d.solved, 0), 0);
+    const overdueAll = sids.reduce((s, sid) => s + C.assignmentsOf(sid).filter(a => a.status === 'overdue').length, 0);
     const cells = [
-      { v: today.length, s:'занятий сегодня', c:'k-blue' },
-      { v: queue.length, s:'работ на проверке', c: queue.length ? 'k-amber' : 'k-green' },
-      { v: sids.length,  s:'учеников', c:'k-violet' },
-      { v: overdueAll,   s:'просроченных д/з', c: overdueAll ? 'k-red' : 'k-green' },
+      { v: today.length,  s:'занятий сегодня', c:'k-blue' },
+      { v: queue.length,  s:'работ на проверке', c: queue.length ? 'k-amber' : 'k-green' },
+      { v: sids.length,   s:'учеников', c:'k-violet' },
+      { v: groups.length, s:'групп', c:'k-green' },
+      { v: overdueAll,    s:'просроченных д/з', c: overdueAll ? 'k-red' : 'k-green' },
     ];
-    return `<section class="kpis">${cells.map(x =>
+    return `<section class="kpis" style="grid-template-columns:repeat(5,1fr)">${cells.map(x =>
       `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
   }
 
@@ -38,20 +38,34 @@
     if (!today.length) return `<section class="card">
       <div class="head"><h2>Сегодня</h2></div>${UI.empty('Занятий сегодня нет','')}</section>`;
     const rows = today.map(l => {
-      const sid = C.studentOfLesson(l);
-      const u = C.studentUser(sid);
       const live = C.lessonIsLive(l);
       const call = (l.links || []).find(x => x.type === 'call');
+      const subj = C.subject(l.subjectId);
+      if (C.isGroupLesson(l)) {
+        const g = C.group(l.groupId);
+        const n = C.membersOf(g.id).length;
+        return `<div class="row">
+          <div class="avatar" style="background:linear-gradient(135deg,#4ade80,#16a34a)">${n}</div>
+          <span class="grow"><span class="t">${UI.esc(g.title)}${live ? ' <span class="badge b-green">идёт</span>' : ''}</span>
+            <span class="s">${C.fmtTime(l.startsAt)} · ${l.durationMin} мин · группа, ${n}
+              ${C.plural(n,'участник','участника','участников')} · ${(l.taskIds||[]).length}
+              ${C.plural((l.taskIds||[]).length,'задание','задания','заданий')}</span></span>
+          <span class="r" style="display:flex;gap:8px;align-items:center">
+            ${UI.subjectTag(subj)}
+            ${call ? `<a class="btn sm ghost" href="${call.url}" target="_blank" rel="noopener">Созвон</a>` : ''}
+            <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}">Вести</a></span></div>`;
+      }
+      const sid = C.studentsOfLesson(l)[0];
+      const u = C.studentUser(sid);
       return `<div class="row">
         ${UI.avatar(u.name)}
         <span class="grow"><span class="t">${UI.esc(u.name)}${live ? ' <span class="badge b-green">идёт</span>' : ''}</span>
-          <span class="s">${C.fmtTime(l.startsAt)} · ${l.durationMin} мин ·
-            ${(l.taskIds||[]).length} ${C.plural((l.taskIds||[]).length,'задание','задания','заданий')} ·
-            ${(l.links||[]).length} ${C.plural((l.links||[]).length,'ссылка','ссылки','ссылок')}</span></span>
-        <span class="r" style="display:flex;gap:8px">
+          <span class="s">${C.fmtTime(l.startsAt)} · ${l.durationMin} мин · индивидуально · ${(l.links||[]).length}
+            ${C.plural((l.links||[]).length,'ссылка','ссылки','ссылок')}</span></span>
+        <span class="r" style="display:flex;gap:8px;align-items:center">
+          ${UI.subjectTag(subj)}
           ${call ? `<a class="btn sm ghost" href="${call.url}" target="_blank" rel="noopener">Созвон</a>` : ''}
-          <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}&student=${sid}">Вести</a>
-        </span></div>`;
+          <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}&student=${sid}">Вести</a></span></div>`;
     }).join('');
     return `<section class="card">
       <div class="head"><h2>Сегодня</h2><span class="muted small">${C.fmtDateFull(Date.now())}</span></div>
@@ -61,33 +75,60 @@
   function queueHTML() {
     if (!queue.length) return `<section class="card">
       <div class="head"><h2>На проверке</h2></div>
-      ${UI.empty('Очередь пуста','Работы появятся, когда ученики отправят задания с ручной проверкой.')}</section>`;
+      ${UI.empty('Очередь пуста','Сюда попадают задания без автопроверки.')}</section>`;
     const rows = queue.slice(0, 6).map(q => `
       <a class="row" href="tutor-check.html?attempt=${q.attempt.id}">
-        <span class="badge b-amber">№${q.task ? q.task.egeNumber : '?'}</span>
+        <span class="badge b-amber">№${q.task ? q.task.number : '?'}</span>
         <span class="grow"><span class="t">${UI.esc(q.user.name)} · ${UI.esc(q.task ? q.task.title : '')}</span>
           <span class="s">${q.assignment ? UI.esc(q.assignment.title) : 'с занятия'} ·
             ${C.fmtDur(q.attempt.activeSeconds)} в работе</span></span>
-        <span class="r">отправлено<br>${C.fmtDate(q.attempt.submittedAt)}</span></a>`).join('');
+        <span class="r">${C.fmtDate(q.attempt.submittedAt)}</span></a>`).join('');
     return `<section class="card">
       <div class="head"><h2>На проверке</h2><a href="tutor-check.html">вся очередь</a></div>
       <div class="row-list">${rows}</div></section>`;
   }
 
+  function groupsHTML() {
+    if (!groups.length) return `<section class="card" id="groups" style="margin-top:14px">
+      <div class="head"><h2>Группы</h2></div>${UI.empty('Групп нет','')}</section>`;
+    const rows = groups.map(g => {
+      const gs = C.groupStats(g.id);
+      const inv = C.db.invites.find(i => i.groupId === g.id && C.inviteState(i).ok);
+      return `<tr>
+        <td><b>${UI.esc(g.title)}</b>
+          <div class="muted small">${g.level} · ${g.schedule}</div></td>
+        <td>${UI.subjectTag(C.subject(g.subjectId))}</td>
+        <td class="num">${gs.size} / ${g.capacity}</td>
+        <td class="num" style="color:${UI.pctColor(gs.avgAccuracy)}">${gs.avgAccuracy == null ? '—' : gs.avgAccuracy + '%'}</td>
+        <td class="num" style="color:${UI.pctColor(gs.avgAttendance)}">${gs.avgAttendance == null ? '—' : gs.avgAttendance + '%'}</td>
+        <td>${g.status === 'active' ? '<span class="badge b-green">идёт</span>' : '<span class="badge b-amber">набор</span>'}</td>
+        <td class="num">${inv ? '<span class="badge b-blue">ссылка есть</span>' : '<span class="muted small">нет ссылки</span>'}</td>
+        <td class="num"><a class="btn sm ghost" href="group.html?group=${g.id}">Открыть</a></td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="groups" style="margin-top:14px">
+      <div class="head"><div><h2>Группы</h2>
+        <div class="hint">Группа — контейнер: занятия и задания адресуются ей, статистика остаётся по ученикам</div></div>
+        <button class="btn sm" id="newgroup">Новая группа</button></div>
+      <table><thead><tr>
+        <th>Группа</th><th>Предмет</th><th class="num">Состав</th><th class="num">Точность</th>
+        <th class="num">Посещ.</th><th>Статус</th><th class="num">Набор</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
   function studentsHTML() {
     const rows = sids.map(sid => {
       const u = C.studentUser(sid);
+      const subs = C.subjectsOf(sid);
       const k = C.kpi(sid);
-      const en = C.enrollmentsOf(sid)[0];
+      const grs = C.groupsOf(sid);
+      const overdue = C.assignmentsOf(sid).filter(a => a.status === 'overdue').length;
       const weak = C.topicMastery(sid)[0];
-      const asg = C.assignmentsOf(sid);
-      const overdue = asg.filter(a => a.status === 'overdue').length;
-      const goal = C.goalProgress(sid);
       return `<tr>
-        <td><div style="display:flex;align-items:center;gap:10px">
-          ${UI.avatar(u.name)}<div><b>${UI.esc(u.name)}</b>
-          <div class="muted small">${C.student(sid).grade} класс${en && en.status !== 'active' ? ' · привязка на паузе' : ''}</div></div></div></td>
-        <td class="num">${goal && goal.current != null ? goal.current : '—'}</td>
+        <td><div style="display:flex;align-items:center;gap:10px">${UI.avatar(u.name)}
+          <div><b>${UI.esc(u.name)}</b>
+            <div class="muted small">${C.student(sid).grade} класс${grs.length ? ' · ' + UI.esc(grs[0].title) : ' · индивидуально'}</div></div></div></td>
+        <td>${subs.map(UI.subjectTag).join(' ')}</td>
         <td class="num" style="color:${UI.pctColor(k.accuracy)}">${k.accuracy == null ? '—' : k.accuracy + '%'}</td>
         <td class="num">${k.solvedWeek}</td>
         <td class="num">${overdue ? `<span class="badge b-red">${overdue}</span>` : '<span class="muted">0</span>'}</td>
@@ -97,25 +138,123 @@
     }).join('');
     return `<section class="card" id="students" style="margin-top:14px">
       <div class="head"><div><h2>Ученики</h2>
-        <div class="hint">Список формируется из Enrollment — привязки заводит админ</div></div></div>
+        <div class="hint">Индивидуальные привязки и участники групп — один список</div></div></div>
       <table><thead><tr>
-        <th>Ученик</th><th class="num">Пробник</th><th class="num">Верных</th>
-        <th class="num">За неделю</th><th class="num">Просрочки</th><th>Слабая тема</th><th></th>
+        <th>Ученик</th><th>Предметы</th><th class="num">Верных</th><th class="num">За неделю</th>
+        <th class="num">Просрочки</th><th>Слабая тема</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  function invitesHTML() {
+    const rows = invites.map(i => {
+      const st = C.inviteState(i);
+      const t = C.inviteTarget(i);
+      const left = i.maxUses == null ? '∞' : Math.max(0, i.maxUses - i.usedCount);
+      return `<tr>
+        <td><code style="font-family:var(--mono);font-size:13px">${UI.esc(i.code)}</code>
+          <div class="muted small">${UI.esc(i.note || '')}</div></td>
+        <td>${i.kind === 'group' ? '<span class="badge b-violet">в группу</span>' : '<span class="badge b-blue">индивид.</span>'}</td>
+        <td class="muted small">${t.group ? UI.esc(t.group.title) : t.subject ? UI.esc(t.subject.name) : '—'}</td>
+        <td class="num">${i.usedCount}</td>
+        <td class="num">${left}</td>
+        <td class="muted small">${i.expiresAt ? C.fmtDate(i.expiresAt) : 'бессрочно'}</td>
+        <td>${st.ok ? '<span class="badge b-green">активна</span>'
+              : `<span class="badge b-grey">${UI.esc(st.label)}</span>`}</td>
+        <td class="num" style="white-space:nowrap">
+          <button class="btn sm ghost copy" data-code="${UI.esc(i.code)}">Копировать</button>
+          ${st.ok ? `<button class="btn sm grey revoke" data-id="${i.id}">Отозвать</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="invites" style="margin-top:14px">
+      <div class="head"><div><h2>Приглашения</h2>
+        <div class="hint">Ученик присоединяется по ссылке — админ в этом не участвует</div></div>
+        <button class="btn sm" id="newinvite">Новая ссылка</button></div>
+      ${invites.length ? `<table><thead><tr>
+        <th>Код</th><th>Тип</th><th>Куда</th><th class="num">Переходов</th><th class="num">Осталось</th>
+        <th>До</th><th>Статус</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table>` : UI.empty('Ссылок нет','')}
+      <div id="invite-form"></div>
+      <div class="note n-grey" style="margin-top:14px">
+        Принятие ссылки создаёт <code>Enrollment</code> (индивидуально) или <code>GroupMember</code> (группа)
+        и разворачивает уже выданные групповые задания на нового участника.
+      </div></section>`;
   }
 
   UI.page({
     active:'today',
     head:{ title:`Здравствуйте, ${me.name.split(' ')[0]}!`,
-      sub:`${sids.length} ${C.plural(sids.length,'ученик','ученика','учеников')} · информатика`,
+      sub:`${sids.length} ${C.plural(sids.length,'ученик','ученика','учеников')} · ${groups.length}
+        ${C.plural(groups.length,'группа','группы','групп')} · ${tp.subjects.map(id => C.subject(id).name).join(', ')}`,
       actions:`<a class="btn ghost" href="tutor-check.html">Очередь проверки</a>` },
     body:`${kpiHTML()}
       <div class="cols c2">${todayHTML()}${queueHTML()}</div>
-      ${studentsHTML()}`,
+      ${groupsHTML()}
+      ${studentsHTML()}
+      ${invitesHTML()}`,
   });
 
-  if (location.hash === '#students') {
-    const el = document.getElementById('students');
+  /* копирование ссылок */
+  document.querySelectorAll('.copy').forEach(b =>
+    b.addEventListener('click', () => UI.copy(C.inviteUrl(b.dataset.code), b)));
+
+  document.querySelectorAll('.revoke').forEach(b =>
+    b.addEventListener('click', () => { C.revokeInvite(b.dataset.id); location.reload(); }));
+
+  /* создание ссылки */
+  const ni = document.getElementById('newinvite');
+  if (ni) ni.addEventListener('click', () => {
+    const slot = document.getElementById('invite-form');
+    const subjOpts = tp.subjects.map(id => `<option value="${id}">${UI.esc(C.subject(id).name)}</option>`).join('');
+    const grpOpts = groups.map(g => `<option value="${g.id}">${UI.esc(g.title)}</option>`).join('');
+    slot.innerHTML = `<div class="card" style="margin-top:14px;background:var(--bg)">
+      <div class="head"><h2>Новая ссылка</h2><a href="#" id="closeform">закрыть</a></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label style="flex:1;min-width:150px"><div class="k muted small">Тип</div>
+          <select id="f-kind" class="btn ghost sm" style="width:100%;text-align:left">
+            <option value="enrollment">индивидуальные занятия</option>
+            <option value="group">вступление в группу</option></select></label>
+        <label style="flex:1;min-width:150px"><div class="k muted small">Предмет</div>
+          <select id="f-subj" class="btn ghost sm" style="width:100%;text-align:left">${subjOpts}</select></label>
+        <label style="flex:1;min-width:150px" id="f-grp-wrap" hidden><div class="k muted small">Группа</div>
+          <select id="f-grp" class="btn ghost sm" style="width:100%;text-align:left">${grpOpts}</select></label>
+        <label style="width:120px"><div class="k muted small">Лимит</div>
+          <input id="f-max" type="number" min="1" value="5"
+            style="width:100%;padding:8px 12px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);color:var(--text);font:inherit"></label>
+        <button class="btn sm" id="f-make">Создать</button>
+      </div>
+      <div id="f-out"></div></div>`;
+    document.getElementById('closeform').addEventListener('click', e => { e.preventDefault(); slot.innerHTML = ''; });
+    const kind = document.getElementById('f-kind');
+    kind.addEventListener('change', () => {
+      document.getElementById('f-grp-wrap').hidden = kind.value !== 'group';
+    });
+    document.getElementById('f-make').addEventListener('click', () => {
+      const k = kind.value;
+      const gid = document.getElementById('f-grp').value;
+      const inv = C.createInvite({
+        kind: k, tutorId: T,
+        subjectId: k === 'group' ? C.group(gid).subjectId : document.getElementById('f-subj').value,
+        groupId: k === 'group' ? gid : null,
+        createdBy: me.id,
+        maxUses: +document.getElementById('f-max').value || null,
+        prefix: me.name.slice(0, 2).toUpperCase(),
+        note: k === 'group' ? 'Набор в группу' : 'Индивидуальные занятия',
+      });
+      document.getElementById('f-out').innerHTML =
+        `<div class="verdict v-ok">Ссылка создана: <b>${UI.esc(C.inviteUrl(inv.code))}</b>
+         <a href="tutor.html#invites" onclick="location.reload()">обновить список</a></div>`;
+    });
+  });
+
+  const ng = document.getElementById('newgroup');
+  if (ng) ng.addEventListener('click', () =>
+    alert('Форма создания группы в прототипе не собрана.\n\n' +
+          'Заводится запись Group: репетитор, предмет, название, уровень, расписание, вместимость. ' +
+          'Дальше к ней выпускается ссылка-приглашение.'));
+
+  if (location.hash) {
+    const el = document.querySelector(location.hash);
     if (el) el.scrollIntoView({ block:'start' });
   }
 })();

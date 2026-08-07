@@ -35,10 +35,12 @@ window.UI = (function () {
     if (r === 'tutor') {
       const q = C.reviewQueue(TUTOR).length;
       return [
-        { key:'today',    href:'tutor.html',                  ico:'◧', label:'Сегодня' },
-        { key:'check',    href:'tutor-check.html',            ico:'✓', label:'Проверка', pill:q || null },
-        { key:'lesson',   href:'lesson.html?role=tutor',      ico:'▶', label:'Занятие' },
-        { key:'students', href:'tutor.html#students',         ico:'☺', label:'Ученики' },
+        { key:'today',    href:'tutor.html',             ico:'◧', label:'Сегодня' },
+        { key:'check',    href:'tutor-check.html',       ico:'✓', label:'Проверка', pill:q || null },
+        { key:'lesson',   href:'lesson.html?role=tutor', ico:'▶', label:'Занятие' },
+        { key:'groups',   href:'tutor.html#groups',      ico:'⛁', label:'Группы' },
+        { key:'students', href:'tutor.html#students',    ico:'☺', label:'Ученики' },
+        { key:'invites',  href:'tutor.html#invites',     ico:'⇗', label:'Приглашения' },
       ];
     }
     if (r === 'parent') {
@@ -151,6 +153,43 @@ window.UI = (function () {
     return `<div class="avatar ${cls || ''}">${ini}</div>`;
   }
 
+  /* ── переключатель предмета ──────────────────────────────────────
+     Список берётся из данных ученика, поэтому новый предмет
+     появляется здесь сам, без правки страниц.
+     ──────────────────────────────────────────────────────────────── */
+  const SUBJ_KEY = 'arcs.subject';
+
+  function subjectId(studentId) {
+    const list = Core.subjectsOf(studentId);
+    if (!list.length) return null;
+    const want = qs('subject') || localStorage.getItem(SUBJ_KEY);
+    return list.some(s => s.id === want) ? want : list[0].id;
+  }
+
+  function subjectSwitcher(studentId, current, onChange) {
+    const list = Core.subjectsOf(studentId);
+    if (list.length < 2) return '';
+    return `<div class="filters subjpick" style="margin:0">${list.map(s =>
+      `<button data-subj="${s.id}" class="${s.id === current ? 'on' : ''}">${esc(s.short || s.name)}</button>`
+    ).join('')}</div>`;
+  }
+
+  function bindSubjectSwitcher(handler) {
+    document.querySelectorAll('[data-subj]').forEach(b =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.subj;
+        localStorage.setItem(SUBJ_KEY, id);
+        document.querySelectorAll('[data-subj]').forEach(x => x.classList.toggle('on', x.dataset.subj === id));
+        handler(id);
+      }));
+  }
+
+  function subjectTag(s) {
+    if (!s) return '';
+    const cls = { blue:'b-blue', violet:'b-violet', green:'b-green', amber:'b-amber' }[s.color] || 'b-grey';
+    return `<span class="badge ${cls}">${esc(s.short || s.name)}</span>`;
+  }
+
   const LINK_TYPE = {
     call:     { label:'созвон',   cls:'b-blue',   ico:'▶' },
     board:    { label:'доска',    cls:'b-violet', ico:'▦' },
@@ -167,6 +206,14 @@ window.UI = (function () {
     </a>`;
   }
 
+  function copy(text, btn) {
+    const done = () => { if (!btn) return; const t = btn.textContent; btn.textContent = 'скопировано'; setTimeout(() => btn.textContent = t, 1400); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => prompt('Скопируйте ссылку:', text));
+    } else { prompt('Скопируйте ссылку:', text); }
+  }
+
   return { role, setRole, page, badge, empty, bar, pctColor, avatar, esc,
-           linkRow, LINK_TYPE, STUDENT, TUTOR, PARENT, HOME, qs };
+           linkRow, LINK_TYPE, STUDENT, TUTOR, PARENT, HOME, qs,
+           subjectId, subjectSwitcher, bindSubjectSwitcher, subjectTag, copy };
 })();

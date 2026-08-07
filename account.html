@@ -15,8 +15,8 @@
   const C = Core, S = UI.STUDENT;
   const me = C.studentUser(S);
   const prof = C.student(S);
-  const tutor = C.tutorOf(S);
-  const goal = C.goalProgress(S);
+  const subjects = C.subjectsOf(S);
+  const groups = C.groupsOf(S);
   const sub = C.subscriptionOf(S);
   const guards = C.db.guardians.filter(g => g.studentId === S);
 
@@ -72,29 +72,25 @@
       </div>
 
       <div class="stack">
-        ${goal ? `<section class="card" style="background:var(--brand-soft);border-color:rgba(47,107,255,.2)">
-          <div class="hint" style="margin-bottom:6px">Цель</div>
-          <div style="font-size:16px;font-weight:650;margin-bottom:14px">
-            ЕГЭ ${UI.esc((C.db.subjects[0]||{}).name)} · ${new Date(goal.goal.examDate).toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</div>
-          <div style="font-size:22px;font-weight:750;color:var(--brand);letter-spacing:-.02em;margin-bottom:12px">
-            До экзамена: ${goal.daysToExam} ${C.plural(goal.daysToExam,'день','дня','дней')}</div>
-          ${UI.bar(goal.percent)}
-          <div class="muted small" style="margin-top:8px">
-            ${goal.current} из ${goal.target} ${C.plural(goal.target,'балла','баллов','баллов')} · осталось ${goal.left}</div>
-        </section>` : ''}
-
-        ${tutor ? `<section class="card">
-          <div class="head"><h2>Мой репетитор</h2></div>
-          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-            ${UI.avatar(tutor.user.name,'blue')}
-            <div style="flex:1;min-width:120px">
-              <b style="display:block">${UI.esc(tutor.user.name)}</b>
-              <span class="muted small">${UI.esc((C.db.subjects[0]||{}).name)} · ${tutor.profile.yearsExp} года опыта</span>
-            </div>
-            <a class="btn sm" href="lesson.html">К занятию</a>
-          </div>
-          <div class="hint" style="margin-top:12px">Привязка ведётся администратором и хранится в Enrollment.</div>
-        </section>` : ''}
+        <section class="card">
+          <div class="head"><div><h2>Мои предметы</h2>
+            <div class="hint">Каждый предмет — своя привязка, свой репетитор и своя цель</div></div></div>
+          <div class="row-list">${subjects.map(sj => {
+            const t = C.tutorOf(S, sj.id);
+            const g = C.goalProgress(S, sj.id);
+            const gr = C.groupsOf(S, sj.id)[0];
+            return `<div class="row">
+              ${UI.subjectTag(sj)}
+              <span class="grow"><span class="t">${UI.esc(sj.name)}</span>
+                <span class="s">${t ? UI.esc(t.user.name) : 'без репетитора'} ·
+                  ${gr ? 'группа «' + UI.esc(gr.title) + '»' : 'индивидуально'}${
+                  g ? ' · цель ' + g.target + ' ' + C.plural(g.target,'балл','балла','баллов') : ''}</span></span>
+              <span class="r">${g && g.current != null
+                ? g.current + ' / ' + g.target + '<br>до экзамена ' + g.daysToExam + ' дн'
+                : 'нет пробников'}</span></div>`;
+          }).join('')}</div>
+          <a class="btn ghost sm" style="margin-top:14px" href="invite.html">Присоединиться по коду</a>
+        </section>
 
         ${sub ? `<section class="card" style="background:var(--amber-bg);border-color:rgba(217,119,6,.25)">
           <div class="head"><h2>Абонемент</h2>
@@ -117,7 +113,7 @@
     active:'account',
     head:{
       title:'Профиль',
-      sub:`${prof.grade} класс · ${UI.esc((C.db.subjects[0]||{}).name)} · с ${new Date(prof.startedAt).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}`,
+      sub:`${prof.grade} класс · ${subjects.map(x => UI.esc(x.name)).join(', ')} · с ${new Date(prof.startedAt).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}`,
       actions:`<a class="btn ghost" href="index.html">На главную</a>`,
     },
     body,

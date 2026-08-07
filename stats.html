@@ -16,6 +16,7 @@
   const asParent = UI.role() === 'parent';
   const S = UI.qs('student') || UI.STUDENT;
   const stUser = C.studentUser(S);
+  let subj = UI.subjectId(S);
 
   const PERIODS = [
     { key:'7',  label:'Неделя',   days:7 },
@@ -27,13 +28,13 @@
 
   /* ── KPI ────────────────────────────────────────────────────── */
   function kpiHTML(days) {
-    const k = C.kpi(S);
-    const tns = C.taskNumberStats(S, days);
+    const k = C.kpi(S, subj);
+    const tns = C.taskNumberStats(S, days, subj);
     const solved = tns.reduce((s, t) => s + t.attempts, 0);
     const correct = tns.reduce((s, t) => s + t.correct, 0);
     const seconds = tns.reduce((s, t) => s + t.seconds, 0);
-    const att = C.attendance(S, days || 3650);
-    const series = C.mockSeries(S);
+    const att = C.attendance(S, days || 3650, subj);
+    const series = C.mockSeries(S, subj);
     const last = series[series.length - 1];
     const delta = series.length > 1 ? last.score - series[series.length - 2].score : null;
 
@@ -51,8 +52,8 @@
 
   /* ── график пробников ───────────────────────────────────────── */
   function mockHTML() {
-    const series = C.mockSeries(S);
-    const goal = C.goalProgress(S);
+    const series = C.mockSeries(S, subj);
+    const goal = C.goalProgress(S, subj);
     if (series.length < 2) return `<div class="card"><div class="head"><h2>Динамика пробников</h2></div>
       ${UI.empty('Мало данных', 'График появится после второго пробника.')}</div>`;
 
@@ -95,7 +96,7 @@
 
   /* ── темы ───────────────────────────────────────────────────── */
   function topicsHTML() {
-    const list = C.topicMastery(S);
+    const list = C.topicMastery(S, subj);
     if (!list.length) return `<div class="card"><div class="head"><h2>Темы</h2></div>
       ${UI.empty('Нет данных', 'Появятся после решённых задач.')}</div>`;
     return `<div class="card">
@@ -118,14 +119,14 @@
 
   /* ── активность ─────────────────────────────────────────────── */
   function heatHTML() {
-    const days = C.dailyActivity(S, 28);
+    const days = C.dailyActivity(S, 28, subj);
     const max = Math.max(1, ...days.map(d => d.solved));
     const lvl = n => !n ? 'var(--line)'
       : `color-mix(in srgb, var(--brand) ${Math.round(25 + 75 * (n / max))}%, transparent)`;
     return `<div class="card">
       <div class="head"><div><h2>Активность</h2>
         <div class="hint">Решённые задачи за 4 недели</div></div>
-        <span class="muted small">серия: ${C.streak(S)} ${C.plural(C.streak(S),'день','дня','дней')}</span></div>
+        <span class="muted small">серия: ${C.streak(S, subj)} ${C.plural(C.streak(S, subj),'день','дня','дней')}</span></div>
       <div class="heat">${days.map(d =>
         `<i style="background:${lvl(d.solved)}" title="${C.fmtDate(d.date)}: ${d.solved} ${
           C.plural(d.solved,'задача','задачи','задач')}, ${C.fmtDurShort(d.seconds)}"></i>`).join('')}</div>
@@ -140,7 +141,7 @@
 
   /* ── посещаемость ───────────────────────────────────────────── */
   function attendanceHTML(days) {
-    const a = C.attendance(S, days || 3650);
+    const a = C.attendance(S, days || 3650, subj);
     if (!a.total) return `<div class="card"><div class="head"><h2>Посещаемость</h2></div>
       ${UI.empty('Занятий за период нет', '')}</div>`;
     const dash = 314, off = dash - dash * (a.percent / 100);
@@ -167,24 +168,24 @@
 
   /* ── сводка по номерам заданий: время + процент ─────────────── */
   function tnsHTML(days) {
-    const list = C.taskNumberStats(S, days);
-    if (!list.length) return `<section class="card"><div class="head"><h2>По номерам заданий ЕГЭ</h2></div>
+    const list = C.taskNumberStats(S, days, subj);
+    if (!list.length) return `<section class="card"><div class="head"><h2>По номерам заданий · ${UI.esc(C.subject(subj).name)}</h2></div>
       ${UI.empty('Нет решённых задач за период', '')}</section>`;
 
     const maxSec = Math.max(...list.map(t => t.seconds));
     const bars = list.map(t => {
       const cls = t.percent >= 80 ? 'high' : t.percent >= 60 ? 'mid' : 'low';
-      return `<div class="vbar" title="№${t.egeNumber}: ${C.fmtDur(t.seconds)}, ${t.percent}% верных">
+      return `<div class="vbar" title="№${t.number}: ${C.fmtDur(t.seconds)}, ${t.percent}% верных">
         <span class="p" style="color:${UI.pctColor(t.percent)}">${t.percent}%</span>
         <div class="track"><div class="col ${cls}" style="height:${Math.round(t.seconds / maxSec * 100)}%"></div></div>
-        <span class="n">№${t.egeNumber}</span>
+        <span class="n">№${t.number}</span>
         <span class="n" style="font-size:10.5px">${C.fmtDurShort(t.seconds)}</span>
       </div>`;
     }).join('');
 
     const rows = list.slice().sort((a, b) => b.seconds - a.seconds).map(t => `
       <tr>
-        <td><b>№${t.egeNumber}</b></td>
+        <td><b>№${t.number}</b></td>
         <td class="muted small">${UI.esc((t.topic || {}).name || '')}</td>
         <td class="num">${C.fmtDurShort(t.seconds)}</td>
         <td class="num" style="color:${UI.pctColor(t.percent)}">${t.percent}%</td>
@@ -194,7 +195,7 @@
       </tr>`).join('');
 
     return `<section class="card">
-      <div class="head"><div><h2>По номерам заданий ЕГЭ</h2>
+      <div class="head"><div><h2>По номерам заданий · ${UI.esc(C.subject(subj).name)}</h2>
         <div class="hint">Высота столбца — потраченное время, цвет — процент верных</div></div></div>
       <div class="vbars">${bars}</div>
       <table style="margin-top:22px">
@@ -206,14 +207,14 @@
       </table>
       <div class="note n-grey" style="margin-top:14px">
         Это <b>TaskNumberStats</b> из доменной модели. Время — только активное,
-        поэтому строка читается как «№${list[0].egeNumber} решался ${C.fmtDur(list[0].seconds)}, ${list[0].percent}% верных».
+        поэтому строка читается как «№${list[0].number} решался ${C.fmtDur(list[0].seconds)}, ${list[0].percent}% верных».
       </div>
     </section>`;
   }
 
   /* ── последние работы ───────────────────────────────────────── */
   function recentHTML() {
-    const rows = C.attemptsOf(S)
+    const rows = C.attemptsOf(S, subj)
       .filter(a => C.isDone(a) && a.assignmentId)
       .sort((a, b) => new Date(C.attemptDate(b)) - new Date(C.attemptDate(a)))
       .slice(0, 8)
@@ -224,7 +225,7 @@
           : a.isCorrect ? '<span class="badge b-green">верно</span>'
           : '<span class="badge b-red">неверно</span>';
         return `<tr>
-          <td>№${t ? t.egeNumber : '?'} · ${UI.esc(t ? t.title : '')}</td>
+          <td>№${t ? t.number : '?'} · ${UI.esc(t ? t.title : '')}</td>
           <td class="muted small">${asg ? UI.esc(asg.title) : '—'}</td>
           <td class="muted small">${C.fmtDate(C.attemptDate(a))}</td>
           <td>${st}</td>
@@ -249,17 +250,21 @@
       ${recentHTML()}`;
   }
 
-  const switcher = `<div class="filters" style="margin:0">${PERIODS.map(p =>
+  const periodSwitcher = `<div class="filters" style="margin:0">${PERIODS.map(p =>
     `<button data-p="${p.key}" class="${p.key === period ? 'on' : ''}">${p.label}</button>`).join('')}</div>`;
+  const switcher = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    ${UI.subjectSwitcher(S, subj)}${periodSwitcher}</div>`;
 
   UI.page({
     active: asParent ? 'stats' : 'stats',
     head:{ title:'Статистика',
-      sub: UI.role() === 'student' ? 'Информатика · всё считается из решённых задач'
-        : UI.esc(stUser.name) + (asParent ? ' · только просмотр' : ' · глазами репетитора'),
+      sub: (UI.role() === 'student' ? 'Всё считается из решённых задач'
+        : UI.esc(stUser.name) + (asParent ? ' · только просмотр' : ' · глазами репетитора'))
+        + ' · ' + C.subjectsOf(S).map(x => x.name).join(', '),
       actions: switcher },
     body:'',
   });
+  UI.bindSubjectSwitcher(id => { subj = id; render(); });
   document.querySelectorAll('[data-p]').forEach(b =>
     b.addEventListener('click', () => {
       period = b.dataset.p;

@@ -57,7 +57,7 @@
       if (asgId) q.set('assignment', asgId); if (lesId) q.set('lesson', lesId);
       return `<a href="task.html?${q}" class="${id === taskId ? 'cur' : ''}">
         <span style="width:14px">${mark}</span>
-        <span class="grow">№${st ? st.egeNumber : '?'} · ${UI.esc(st ? st.title : id)}</span></a>`;
+        <span class="grow">№${st ? st.number : '?'} · ${UI.esc(st ? st.title : id)}</span></a>`;
     }).join('');
     return `<div class="card"><div class="head"><h2>Задачи ${asg ? 'этого д/з' : 'занятия'}</h2></div>
       <div class="tasklist">${items}</div></div>`;
@@ -69,7 +69,7 @@
         <section class="card">
           <div class="head">
             <div>
-              <h2>№${t.egeNumber} · ${UI.esc(t.title)}</h2>
+              <h2>№${t.number} · ${UI.esc(t.title)}</h2>
               <div class="hint">${UI.esc((C.topic(t.topicId) || {}).name || '')}
                 · сложность ${t.difficulty}/3
                 · ${t.autoCheck ? 'автопроверка' : 'проверяет репетитор'}</div>

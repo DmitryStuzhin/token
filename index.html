@@ -14,32 +14,31 @@
 (function () {
   const C = Core, S = UI.STUDENT;
   const me = C.studentUser(S);
-  const k = C.kpi(S);
-  const goal = C.goalProgress(S);
-  const nl = C.nextLesson(S);
-  const week = C.dailyActivity(S, 7);
-  const mastery = C.topicMastery(S).slice(0, 4);
-  const todo = C.upcoming(S, 4);
-  const sub = C.subscriptionOf(S);
+  const subjects = C.subjectsOf(S);
+  let subj = UI.subjectId(S);
 
   /* ── ближайшее занятие ─────────────────────────────────────── */
   function bannerHTML() {
+    const nl = C.nextLesson(S, subj);
     if (!nl) return `<div class="card" style="margin-bottom:14px">${UI.empty(
       'Занятий не запланировано', 'Расписание появится, когда репетитор поставит занятие.')}</div>`;
-    const when = C.relDay(nl.startsAt) || C.fmtDate(nl.startsAt);
     const call = (nl.links || []).find(l => l.type === 'call');
     const live = C.lessonIsLive(nl);
+    const grp = C.isGroupLesson(nl) ? C.group(nl.groupId) : null;
     return `
       <section class="banner">
         <div>
-          <div class="lbl">${live ? 'занятие идёт' : 'следующее занятие'}</div>
-          <div class="val">Информатика · ${when} в ${C.fmtTime(nl.startsAt)}</div>
-          <div class="meta">${nl.durationMin} минут${(nl.taskIds || []).length
-            ? ' · ' + nl.taskIds.length + ' ' + C.plural(nl.taskIds.length, 'задание', 'задания', 'заданий') + ' прикреплено'
-            : ' · заданий пока нет'}</div>
+          <div class="lbl">${live ? '● занятие идёт' : 'следующее занятие'}</div>
+          <div class="val">${UI.esc(C.subject(nl.subjectId).name)} ·
+            ${C.relDay(nl.startsAt) || C.fmtDate(nl.startsAt)} в ${C.fmtTime(nl.startsAt)}</div>
+          <div class="meta">${nl.durationMin} минут ·
+            ${grp ? 'группа «' + UI.esc(grp.title) + '»' : 'индивидуально'} ·
+            ${(nl.taskIds || []).length
+              ? nl.taskIds.length + ' ' + C.plural(nl.taskIds.length,'задание','задания','заданий') + ' прикреплено'
+              : 'заданий пока нет'}</div>
         </div>
         <div class="acts">
-          <a class="btn white" href="lesson.html">Открыть занятие</a>
+          <a class="btn white" href="lesson.html?lesson=${nl.id}">Открыть занятие</a>
           ${call ? `<a class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.6)"
                        href="${call.url}" target="_blank" rel="noopener">Подключиться</a>` : ''}
         </div>
@@ -48,11 +47,12 @@
 
   /* ── KPI ────────────────────────────────────────────────────── */
   function kpiHTML() {
+    const k = C.kpi(S, subj);
     const cells = [
-      { v: k.accuracy == null ? '—' : k.accuracy + '%', s: 'верных ответов', c: 'k-green' },
-      { v: k.solvedWeek, s: 'задач за неделю', c: 'k-blue' },
-      { v: k.streak + ' ' + C.plural(k.streak, 'день', 'дня', 'дней'), s: 'серия занятий', c: 'k-amber' },
-      { v: k.overdue, s: 'д/з не сдано', c: k.overdue ? 'k-red' : 'k-green' },
+      { v: k.accuracy == null ? '—' : k.accuracy + '%', s:'верных ответов', c:'k-green' },
+      { v: k.solvedWeek, s:'задач за неделю', c:'k-blue' },
+      { v: k.streak + ' ' + C.plural(k.streak,'день','дня','дней'), s:'серия занятий', c:'k-amber' },
+      { v: k.overdue, s:'д/з не сдано', c: k.overdue ? 'k-red' : 'k-green' },
     ];
     return `<section class="kpis">${cells.map(c =>
       `<div class="kpi ${c.c}"><b>${c.v}</b><span>${c.s}</span></div>`).join('')}</section>`;
@@ -60,11 +60,11 @@
 
   /* ── неделя ─────────────────────────────────────────────────── */
   function weekHTML() {
+    const week = C.dailyActivity(S, 7, subj);
     const names = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
     const today = new Date().setHours(0,0,0,0);
     const cells = week.map(d => {
-      const isToday = d.date.getTime() === today;
-      const cls = ['day', d.solved ? 'has' : '', isToday ? 'today' : ''].filter(Boolean).join(' ');
+      const cls = ['day', d.solved ? 'has' : '', d.date.getTime() === today ? 'today' : ''].filter(Boolean).join(' ');
       return `<div class="${cls}" title="${d.solved} ${C.plural(d.solved,'задача','задачи','задач')}, ${C.fmtDurShort(d.seconds)}">
         <div class="d">${names[d.date.getDay()]}</div><div class="n">${d.date.getDate()}</div></div>`;
     }).join('');
@@ -78,12 +78,12 @@
         <span><i style="background:var(--brand)"></i> сегодня</span>
         <span><i style="background:var(--brand-soft)"></i> были решения</span>
         <span><i style="background:var(--line)"></i> пусто</span>
-      </div>
-    </div>`;
+      </div></div>`;
   }
 
   /* ── слабые темы ────────────────────────────────────────────── */
   function masteryHTML() {
+    const mastery = C.topicMastery(S, subj).slice(0, 4);
     if (!mastery.length) return `<div class="card"><div class="head"><h2>Слабые темы</h2></div>
       ${UI.empty('Пока нет данных', 'Появятся после первых решённых задач.')}</div>`;
     const rows = mastery.map(m => `
@@ -93,36 +93,35 @@
           <span class="muted">${m.percent}%${m.delta != null
             ? ` <em style="font-style:normal;font-weight:650;color:${m.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${m.delta >= 0 ? '↑' : '↓'} ${Math.abs(m.delta)}</em>`
             : ''}</span>
-        </div>
-        ${UI.bar(m.percent, UI.pctColor(m.percent))}
-      </div>`).join('');
+        </div>${UI.bar(m.percent, UI.pctColor(m.percent))}</div>`).join('');
     return `<div class="card">
-      <div class="head"><h2>Слабые темы</h2><a href="stats.html">вся статистика</a></div>
+      <div class="head"><h2>Слабые темы</h2><a href="stats.html?subject=${subj}">вся статистика</a></div>
       ${rows}</div>`;
   }
 
   /* ── ближайшие дела ─────────────────────────────────────────── */
   function todoHTML() {
+    const todo = C.upcoming(S, 5, subj);
     if (!todo.length) return `<section class="card">
       <div class="head"><h2>Ближайшие задачи</h2></div>
       ${UI.empty('Всё сделано', 'Новые задания появятся после занятия.')}</section>`;
 
     const rows = todo.map(t => {
       if (t.kind === 'lesson') {
-        return `<a class="row" href="lesson.html">
+        const grp = C.isGroupLesson(t.meta) ? C.group(t.meta.groupId) : null;
+        return `<a class="row" href="lesson.html?lesson=${t.meta.id}">
           <span class="badge b-violet">занятие</span>
-          <span class="grow"><span class="t">Занятие с репетитором</span>
-            <span class="s">${(t.meta.links || []).length} ${C.plural((t.meta.links||[]).length,'ссылка','ссылки','ссылок')} · ${t.meta.durationMin} мин</span></span>
+          <span class="grow"><span class="t">${UI.esc(t.title)}</span>
+            <span class="s">${grp ? UI.esc(grp.title) : 'индивидуально'} · ${t.meta.durationMin} мин</span></span>
           <span class="r">${C.relDay(t.dueAt) || C.fmtDate(t.dueAt)}<br>${C.fmtTime(t.dueAt)}</span></a>`;
       }
-      const a = t.meta;
-      const left = a.daysLeft;
+      const a = t.meta, left = a.daysLeft;
       const when = left < 0 ? `просрочено на ${Math.abs(left)} ${C.plural(Math.abs(left),'день','дня','дней')}`
                  : left === 0 ? 'сегодня' : `осталось ${left} ${C.plural(left,'день','дня','дней')}`;
       return `<a class="row" href="homework.html#${a.id}">
         ${UI.badge(a.status)}
         <span class="grow"><span class="t">${UI.esc(a.title)}</span>
-          <span class="s">${a.done} из ${a.total} · ${C.fmtDurShort(a.seconds)}</span></span>
+          <span class="s">${a.isGroup ? 'группа · ' : ''}${a.done} из ${a.total} · ${C.fmtDurShort(a.seconds)}</span></span>
         <span class="r">${when}<br>до ${C.fmtDate(a.dueAt)}</span></a>`;
     }).join('');
 
@@ -131,11 +130,13 @@
       <div class="row-list">${rows}</div></section>`;
   }
 
-  /* ── цель и абонемент ───────────────────────────────────────── */
+  /* ── цель, репетитор, абонемент ─────────────────────────────── */
   function goalHTML() {
+    const goal = C.goalProgress(S, subj);
     if (!goal || goal.current == null) return '';
     return `<div class="card">
-      <div class="head"><h2>Цель</h2><span class="muted small">${goal.goal.targetScore} баллов</span></div>
+      <div class="head"><h2>Цель · ${UI.esc(goal.subject.short || goal.subject.name)}</h2>
+        <span class="muted small">${goal.goal.targetScore} баллов</span></div>
       <div style="font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--brand);margin-bottom:10px">
         До экзамена: ${goal.daysToExam} ${C.plural(goal.daysToExam,'день','дня','дней')}</div>
       ${UI.bar(goal.percent)}
@@ -144,7 +145,29 @@
     </div>`;
   }
 
+  function tutorHTML() {
+    const t = C.tutorOf(S, subj);
+    if (!t) return '';
+    const grp = C.groupsOf(S, subj)[0];
+    return `<div class="card">
+      <div class="head"><h2>Репетитор</h2>${UI.subjectTag(C.subject(subj))}</div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        ${UI.avatar(t.user.name, 'blue')}
+        <div style="flex:1;min-width:120px">
+          <b style="display:block">${UI.esc(t.user.name)}</b>
+          <span class="muted small">${grp ? 'группа «' + UI.esc(grp.title) + '»' : 'индивидуально'}</span>
+        </div>
+      </div>
+      <div class="hint" style="margin-top:12px">
+        ${t.via === 'group' ? 'Вы попали к репетитору через группу.' : 'Индивидуальная привязка.'}
+        Присоединиться к ещё одному предмету можно по ссылке-приглашению.
+      </div>
+      <a class="btn ghost sm" style="margin-top:12px" href="invite.html">Ввести код приглашения</a>
+    </div>`;
+  }
+
   function subHTML() {
+    const sub = C.subscriptionOf(S);
     if (!sub) return '';
     const low = sub.lessonsLeft <= 1;
     return `<div class="card">
@@ -152,25 +175,33 @@
       <div style="font-size:19px;font-weight:750;color:${low ? 'var(--red)' : 'var(--amber)'}">
         Осталось занятий: ${sub.lessonsLeft}</div>
       <div class="muted small" style="margin-top:4px">
-        ${sub.nextChargeAt ? 'Следующее списание ' + C.fmtDate(sub.nextChargeAt) + ' · ' + C.fmtMoney(sub.price) : 'Списаний не запланировано'}</div>
-      <div class="note n-grey" style="margin-top:12px">Оплата ведётся родителем. В прототипе платежи не подключены.</div>
+        ${sub.nextChargeAt ? 'Списание ' + C.fmtDate(sub.nextChargeAt) + ' · ' + C.fmtMoney(sub.price) : 'Списаний нет'}</div>
+      <div class="note n-grey" style="margin-top:12px">Платежи в прототипе не подключены.</div>
     </div>`;
   }
 
-  UI.page({
-    active: 'home',
-    head: {
-      title: `Привет, ${me.name.split(' ')[0]}!`,
-      sub: C.fmtDateFull(Date.now()),
-      actions: `<span class="badge b-amber" style="font-size:13px;padding:8px 14px">🔥 серия: ${k.streak} ${C.plural(k.streak,'день','дня','дней')}</span>`,
-    },
-    body: `
+  function render() {
+    document.getElementById('content').innerHTML = `
       ${bannerHTML()}
       ${kpiHTML()}
       <section class="cols c2w">${weekHTML()}${masteryHTML()}</section>
       ${todoHTML()}
-      <section class="cols c2" style="margin-top:14px">${goalHTML()}${subHTML()}</section>`,
+      <section class="cols c3" style="margin-top:14px">${goalHTML()}${tutorHTML()}${subHTML()}</section>`;
+  }
+
+  const k = C.kpi(S, subj);
+  UI.page({
+    active:'home',
+    head:{
+      title:`Привет, ${me.name.split(' ')[0]}!`,
+      sub: C.fmtDateFull(Date.now()) + ' · ' + subjects.map(s => s.name).join(', '),
+      actions: UI.subjectSwitcher(S, subj) +
+        `<span class="badge b-amber" style="font-size:13px;padding:8px 14px;margin-left:8px">🔥 ${k.streak} ${C.plural(k.streak,'день','дня','дней')}</span>`,
+    },
+    body:'',
   });
+  UI.bindSubjectSwitcher(id => { subj = id; render(); });
+  render();
 })();
 </script>
 </body>

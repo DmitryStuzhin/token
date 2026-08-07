@@ -17,7 +17,10 @@
   const S = UI.qs('student') || UI.STUDENT;
 
   const les = UI.qs('lesson') ? C.lesson(UI.qs('lesson')) : C.nextLesson(S);
-  const stUser = C.studentUser(S);
+  const grp = les && les.groupId ? C.group(les.groupId) : null;
+  const roster = les ? C.studentsOfLesson(les) : [];
+  const watchSid = asTutor && grp ? (UI.qs('student') || roster[0]) : S;
+  const stUser = C.studentUser(watchSid || S);
 
   if (!les) {
     UI.page({ active:'lesson', head:{ title:'Занятие' },
@@ -35,7 +38,11 @@
       <div>
         <div class="lbl">${live ? '● занятие идёт' : les.status === 'done' ? 'занятие завершено' : 'занятие запланировано'}</div>
         <div class="val">${C.relDay(les.startsAt) || C.fmtDate(les.startsAt)} в ${C.fmtTime(les.startsAt)} · ${les.durationMin} мин</div>
-        <div class="meta">${asTutor ? 'Ученик: ' + UI.esc(stUser.name) : 'Репетитор: ' + UI.esc((C.tutorOf(S) || {}).user.name)}</div>
+        <div class="meta">${UI.esc(C.subject(les.subjectId).name)} ·
+          ${grp ? 'группа «' + UI.esc(grp.title) + '», ' + roster.length + ' ' +
+              C.plural(roster.length,'участник','участника','участников')
+            : asTutor ? 'ученик: ' + UI.esc(stUser.name)
+            : 'репетитор: ' + UI.esc(((C.tutorOf(S, les.subjectId) || {}).user || {}).name || '—')}</div>
       </div>
       <div class="acts">
         ${call ? `<a class="btn white" href="${call.url}" target="_blank" rel="noopener">Подключиться</a>` : ''}
@@ -70,7 +77,7 @@
 
     const rows = ids.map(id => {
       const t = C.task(id);
-      const at = C.attemptFor(S, id, { lessonId: les.id }) || {};
+      const at = C.attemptFor(watchSid || S, id, { lessonId: les.id }) || {};
       const state = !at.status || at.status === 'issued' ? { m:'○', c:'var(--muted)', s:'не открыто' }
         : at.status === 'in_progress' ? { m:'◐', c:'var(--brand)', s:'решает · ' + C.fmtDurShort(at.activeSeconds) }
         : at.status === 'submitted' ? { m:'◍', c:'var(--amber)', s:'ждёт проверки' }
@@ -79,7 +86,7 @@
       const href = asTutor ? `#watch-${id}` : `task.html?task=${id}&lesson=${les.id}`;
       return `<a class="row" href="${href}" ${asTutor ? `data-watch="${id}"` : ''}>
         <span style="color:${state.c};font-size:17px;width:16px;text-align:center">${state.m}</span>
-        <span class="grow"><span class="t">№${t ? t.egeNumber : '?'} · ${UI.esc(t ? t.title : id)}</span>
+        <span class="grow"><span class="t">№${t ? t.number : '?'} · ${UI.esc(t ? t.title : id)}</span>
           <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}</span></span>
         <span class="r">${state.s}</span></a>`;
     }).join('');
@@ -91,21 +98,40 @@
   }
 
   /* ── панель наблюдения (только репетитор) ───────────────────── */
+  function rosterHTML() {
+    if (!grp) return '';
+    return `<div class="card">
+      <div class="head"><h2>Кто на занятии</h2><span class="muted small">${roster.length} из ${grp.capacity}</span></div>
+      <div class="tasklist">${roster.map(sid => {
+        const u = C.studentUser(sid);
+        const solved = (les.taskIds || []).filter(tid => {
+          const a = C.attemptFor(sid, tid, { lessonId: les.id });
+          return a && a.isCorrect === true;
+        }).length;
+        return `<a href="lesson.html?role=tutor&lesson=${les.id}&student=${sid}"
+          class="${sid === watchSid ? 'cur' : ''}">
+          <span class="grow">${UI.esc(u.name)}</span>
+          <span class="muted small">${solved} из ${(les.taskIds||[]).length}</span></a>`;
+      }).join('')}</div>
+      <div class="hint" style="margin-top:10px">Экран наблюдения переключается между участниками.</div>
+    </div>`;
+  }
+
   function watchHTML() {
     const ids = les.taskIds || [];
-    const cur = ids.map(id => C.attemptFor(S, id, { lessonId: les.id }))
+    const cur = ids.map(id => C.attemptFor(watchSid || S, id, { lessonId: les.id }))
       .filter(Boolean)
       .sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
     const t = cur ? C.task(cur.taskId) : null;
     return `<div class="card">
       <div class="head">
-        <h2>Экран ученика</h2>
+        <h2>Экран ученика${grp ? ' · ' + UI.esc(stUser.name.split(' ')[0]) : ''}</h2>
         <span class="muted small"><span class="dot ${cur && cur.status === 'in_progress' ? '' : 'off'}"></span>
           обновление раз в 2 с</span>
       </div>
       <div id="watch">
         ${!cur || !t ? UI.empty('Ученик ещё не открыл задание', 'Как только откроет — здесь появится его черновик.')
-          : `<div class="hint" style="margin-bottom:10px">Сейчас: №${t.egeNumber} · ${UI.esc(t.title)}
+          : `<div class="hint" style="margin-bottom:10px">Сейчас: №${t.number} · ${UI.esc(t.title)}
               · ${C.fmtDur(cur.activeSeconds)} · попыток ${cur.tries || 0}</div>
              <div class="editor"><pre id="watch-code">${UI.esc(cur.code || '— пусто —')}</pre></div>`}
       </div>
@@ -134,9 +160,9 @@
 
   /* ── выбор задачи из банка ──────────────────────────────────── */
   function pickerHTML() {
-    const rows = C.db.tasks.map(t => `
+    const rows = C.db.tasks.filter(t => t.subjectId === les.subjectId).map(t => `
       <a class="row" href="#" data-pick="${t.id}">
-        <span class="badge b-blue">№${t.egeNumber}</span>
+        <span class="badge b-blue">№${t.number}</span>
         <span class="grow"><span class="t">${UI.esc(t.title)}</span>
           <span class="s">${UI.esc((C.topic(t.topicId)||{}).name||'')} · сложность ${t.difficulty}/3</span></span>
         <span class="r">${(les.taskIds||[]).includes(t.id) ? 'уже прикреплено' : 'прикрепить'}</span></a>`).join('');
@@ -144,7 +170,9 @@
       <div class="head"><h2>Банк задач</h2><a href="#" id="closepick">закрыть</a></div>
       <div class="row-list">${rows}</div>
       <div class="note n-grey" style="margin-top:12px">
-        В банке ${C.db.tasks.length} ${C.plural(C.db.tasks.length,'задача','задачи','задач')} —
+        В банке ${C.db.tasks.filter(t => t.subjectId === les.subjectId).length}
+        ${C.plural(C.db.tasks.filter(t => t.subjectId === les.subjectId).length,'задача','задачи','задач')}
+        по предмету «${UI.esc(C.subject(les.subjectId).name)}» —
         это сид. Импорт наполняет ту же таблицу, экраны меняться не будут.
       </div>
     </div>`;
@@ -154,7 +182,7 @@
     ? `${bannerHTML()}
        <div class="cols c2w">
          <div class="stack">${watchHTML()}${tasksHTML()}</div>
-         <div class="stack">${linksHTML()}${noteHTML()}</div>
+         <div class="stack">${rosterHTML()}${linksHTML()}${noteHTML()}</div>
        </div>
        <div id="picker-slot"></div>`
     : `${bannerHTML()}
@@ -189,7 +217,9 @@
           const id = a.dataset.pick;
           if (!(les.taskIds || []).includes(id)) {
             les.taskIds = (les.taskIds || []).concat(id);
-            C.ensureAttempt(S, id, { lessonId: les.id });
+            /* групповое занятие — задача разворачивается на всех участников */
+            (roster.length ? roster : [S]).forEach(sid =>
+              C.ensureAttempt(sid, id, { lessonId: les.id }));
             DB.save();
           }
           location.reload();
@@ -212,7 +242,8 @@
       if (!raw || !raw.attempts) return;
       const mine = raw.attempts.filter(a => {
         const full = C.attempt(a.id);
-        return full && full.lessonId === les.id && ids.includes(full.taskId);
+        return full && full.lessonId === les.id && ids.includes(full.taskId)
+          && full.studentId === (watchSid || S);
       });
       if (!mine.length) return;
       const top = mine.sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];

@@ -13,7 +13,8 @@
 <script>
 (function () {
   const C = Core, S = UI.STUDENT;
-  const all = C.assignmentsOf(S);
+  let subj = UI.subjectId(S);
+  let all = C.assignmentsOf(S, subj);
 
   const GROUPS = [
     { key:'all',      label:'Все',         test:() => true },
@@ -52,7 +53,7 @@
         : { m:'✕', c:'var(--red)', s:'неверно' };
       return `<a class="row" href="task.html?task=${id}&assignment=${a.id}">
         <span style="color:${state.c};font-size:17px;width:16px;text-align:center">${state.m}</span>
-        <span class="grow"><span class="t">№${t ? t.egeNumber : '?'} · ${UI.esc(t ? t.title : id)}</span>
+        <span class="grow"><span class="t">№${t ? t.number : '?'} · ${UI.esc(t ? t.title : id)}</span>
           <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}${t && !t.autoCheck ? ' · проверяет репетитор' : ''}</span></span>
         <span class="r">${state.s}</span></a>`;
     }).join('');
@@ -65,6 +66,8 @@
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
             <span class="badge ${st.cls}">${st.label}</span>
+            ${UI.subjectTag(C.subject(a.subjectId))}
+            ${a.isGroup ? `<span class="badge b-violet">группа · ${UI.esc(a.groupTitle)}</span>` : ''}
             <span class="muted small">выдано на занятии ${a.lessonId && C.lesson(a.lessonId)
               ? C.fmtDate(C.lesson(a.lessonId).startsAt) : '—'}</span>
           </div>
@@ -107,10 +110,12 @@
 
   UI.page({
     active:'hw',
-    head:{ title:'Домашние задания', sub:'Информатика · 11 класс',
-      actions:`<a class="btn ghost" href="stats.html">Статистика</a>` },
+    head:{ title:'Домашние задания',
+      sub: C.subjectsOf(S).map(x => x.name).join(', '),
+      actions: UI.subjectSwitcher(S, subj) },
     body:'',
   });
+  UI.bindSubjectSwitcher(id => { subj = id; all = C.assignmentsOf(S, subj); render('all'); });
   render('all');
 })();
 </script>
