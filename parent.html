@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабинет родителя — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, P = UI.PARENT;
+  const me = C.user(P);
+  const kids = C.childrenOf(P);
+
+  if (!kids.length) {
+    UI.page({ active:'progress', head:{ title:'Кабинет родителя' },
+      body:`<div class="card">${UI.empty('Дети не подключены',
+        'Доступ выдаётся по приглашению и подтверждается — запись Guardian.')}</div>` });
+    return;
+  }
+
+  const S = UI.qs('student') && kids.includes(UI.qs('student')) ? UI.qs('student') : kids[0];
+  const kid = C.studentUser(S);
+  const k = C.kpi(S);
+  const goal = C.goalProgress(S);
+  const att = C.attendance(S, 90);
+  const nl = C.nextLesson(S);
+  const sub = C.subscriptionOf(S);
+  const asg = C.assignmentsOf(S);
+  const weak = C.topicMastery(S).slice(0, 3);
+
+  function switcherHTML() {
+    if (kids.length < 2) return '';
+    return `<div class="filters" style="margin:0">${kids.map(id =>
+      `<button onclick="location.href='parent.html?student=${id}'"
+        class="${id === S ? 'on' : ''}">${UI.esc(C.studentUser(id).name.split(' ')[0])}</button>`).join('')}</div>`;
+  }
+
+  /* недельная сводка — то, что уходит родителю в Telegram */
+  function digestHTML() {
+    const week = C.dailyActivity(S, 7);
+    const solved = week.reduce((s, d) => s + d.solved, 0);
+    const seconds = week.reduce((s, d) => s + d.seconds, 0);
+    const tns = C.taskNumberStats(S, 7).sort((a, b) => b.seconds - a.seconds).slice(0, 3);
+    const lessons = C.lessonsOf(S).filter(l => {
+      const t = new Date(l.startsAt).getTime();
+      return t > Date.now() - 7 * C.DAY && t <= Date.now();
+    });
+    const missed = lessons.filter(l => l.status === 'missed').length;
+    const overdue = asg.filter(a => a.status === 'overdue').length;
+
+    return `<section class="card">
+      <div class="head"><div><h2>Сводка за неделю</h2>
+        <div class="hint">Это же уходит в Telegram по расписанию</div></div>
+        <span class="badge b-violet">еженедельно</span></div>
+      <div class="row-list">
+        <div class="row"><span class="grow"><span class="t">Решено задач</span>
+          <span class="s">за 7 дней, ${C.fmtDur(seconds)} чистого времени</span></span>
+          <span class="r" style="font-size:18px;font-weight:750;color:var(--text)">${solved}</span></div>
+        <div class="row"><span class="grow"><span class="t">Занятия</span>
+          <span class="s">${lessons.filter(l=>l.status==='done').length} проведено${missed ? ', ' + missed + ' пропущено' : ''}</span></span>
+          <span class="r" style="font-size:18px;font-weight:750;color:${missed ? 'var(--red)' : 'var(--green)'}">${lessons.length}</span></div>
+        <div class="row"><span class="grow"><span class="t">Домашние задания</span>
+          <span class="s">${overdue ? 'есть просроченные' : 'всё в срок'}</span></span>
+          <span class="r" style="font-size:18px;font-weight:750;color:${overdue ? 'var(--red)' : 'var(--green)'}">${overdue || '✓'}</span></div>
+      </div>
+      ${tns.length ? `<div class="hint" style="margin-top:14px">Больше всего времени ушло на:
+        ${tns.map(t => `<b>№${t.egeNumber}</b> — ${C.fmtDur(t.seconds)}, ${t.percent}% верных`).join(' · ')}</div>` : ''}
+    </section>`;
+  }
+
+  function kpiHTML() {
+    const cells = [
+      { v: goal && goal.current != null ? goal.current : '—', s:'баллов на пробнике', c:'k-green' },
+      { v: k.accuracy == null ? '—' : k.accuracy + '%', s:'верных ответов', c:'k-blue' },
+      { v: att.percent == null ? '—' : att.percent + '%', s:'посещаемость', c: att.percent >= 80 ? 'k-green' : 'k-amber' },
+      { v: k.overdue, s:'д/з не сдано', c: k.overdue ? 'k-red' : 'k-green' },
+    ];
+    return `<section class="kpis">${cells.map(x =>
+      `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
+  }
+
+  function lessonHTML() {
+    if (!nl) return '';
+    return `<div class="card">
+      <div class="head"><h2>Ближайшее занятие</h2></div>
+      <div style="font-size:17px;font-weight:650">${C.relDay(nl.startsAt) || C.fmtDate(nl.startsAt)} в ${C.fmtTime(nl.startsAt)}</div>
+      <div class="muted small" style="margin-top:4px">${nl.durationMin} минут · ${
+        UI.esc((C.tutorOf(S)||{}).user.name)}</div>
+      <div class="note n-grey" style="margin-top:12px">Ссылку на созвон видит ученик — родителю она не нужна.</div>
+    </div>`;
+  }
+
+  function hwHTML() {
+    const list = asg.filter(a => a.status !== 'checked').slice(0, 5);
+    if (!list.length) return `<div class="card"><div class="head"><h2>Домашние задания</h2></div>
+      ${UI.empty('Всё сдано','')}</div>`;
+    return `<div class="card">
+      <div class="head"><h2>Домашние задания</h2><span class="muted small">только просмотр</span></div>
+      <div class="row-list">${list.map(a => `
+        <div class="row">${UI.badge(a.status)}
+          <span class="grow"><span class="t">${UI.esc(a.title)}</span>
+            <span class="s">${a.done} из ${a.total} задач</span></span>
+          <span class="r">до ${C.fmtDate(a.dueAt)}</span></div>`).join('')}</div>
+      <div class="note n-grey" style="margin-top:12px">
+        Видны статусы и оценки. Содержимое решений ребёнка не показывается.
+      </div>
+    </div>`;
+  }
+
+  function weakHTML() {
+    if (!weak.length) return '';
+    return `<div class="card">
+      <div class="head"><h2>Над чем работать</h2><a href="stats.html?role=parent">подробнее</a></div>
+      ${weak.map(m => `<div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px">
+          <b>${m.topic.name}</b><span class="muted">${m.percent}%</span></div>
+        ${UI.bar(m.percent, UI.pctColor(m.percent))}</div>`).join('')}
+    </div>`;
+  }
+
+  function payHTML() {
+    if (!sub) return '';
+    const low = sub.lessonsLeft <= 1;
+    return `<section class="card" id="pay" style="background:var(--amber-bg);border-color:rgba(217,119,6,.25);margin-top:14px">
+      <div class="head"><h2>Абонемент</h2>
+        <span class="badge ${low ? 'b-red' : 'b-amber'}">${low ? 'пора продлить' : sub.plan}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center">
+        <div>
+          <div style="font-size:19px;font-weight:750;color:var(--amber)">Осталось занятий: ${sub.lessonsLeft} из ${sub.lessonsTotal}</div>
+          <div class="muted small" style="margin-top:4px">
+            ${sub.nextChargeAt ? 'Следующее списание ' + C.fmtDate(sub.nextChargeAt) + ' · ' + C.fmtMoney(sub.price) : 'Списаний не запланировано'}</div>
+        </div>
+        <button class="btn" id="pay-btn" style="background:var(--amber)">Продлить</button>
+      </div>
+      <div style="display:flex;gap:5px;margin-top:14px">
+        ${Array.from({length: sub.lessonsTotal}, (_, i) =>
+          `<i style="flex:1;height:7px;border-radius:99px;background:${
+            i < sub.lessonsLeft ? 'var(--amber)' : 'rgba(217,119,6,.22)'}"></i>`).join('')}
+      </div>
+      <div class="note n-grey" style="margin-top:14px">
+        Плательщик — ${UI.esc(me.name)} (<code>payer_user_id</code> отдельно от ученика).
+        Платёжный провайдер в прототипе не подключён.
+      </div>
+    </section>`;
+  }
+
+  UI.page({
+    active:'progress',
+    head:{ title:`Прогресс · ${kid.name.split(' ')[0]}`,
+      sub:`${C.student(S).grade} класс · ${UI.esc((C.tutorOf(S)||{}).user.name)} · доступ только на чтение`,
+      actions: switcherHTML() },
+    body:`${kpiHTML()}
+      ${digestHTML()}
+      <div class="cols c3" style="margin-top:14px">${lessonHTML()}${weakHTML()}${hwHTML()}</div>
+      ${payHTML()}`,
+  });
+
+  const pb = document.getElementById('pay-btn');
+  if (pb) pb.addEventListener('click', () =>
+    alert('Платежи намеренно не реализованы.\n\nЗдесь будет переход к провайдеру, ' +
+          'а после успешного платежа — Payment + пополнение Subscription.lessonsLeft.'));
+
+  if (location.hash === '#pay') {
+    const el = document.getElementById('pay');
+    if (el) el.scrollIntoView({ block:'center' });
+  }
+})();
+</script>
+</body>
+</html>

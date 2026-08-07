@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админка — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core;
+
+  /* ── привязки ученик ↔ репетитор ────────────────────────────── */
+  function linksHTML() {
+    const rows = C.db.enrollments.map(e => {
+      const u = C.studentUser(e.studentId);
+      const tp = C.db.tutorProfiles.find(x => x.id === e.tutorId);
+      const tu = C.user(tp.userId);
+      const sub = C.subscriptionOf(e.studentId);
+      const lessons = C.lessonsOf(e.studentId).filter(l => l.status === 'done').length;
+      return `<tr>
+        <td><div style="display:flex;align-items:center;gap:10px">${UI.avatar(u.name)}
+          <div><b>${UI.esc(u.name)}</b><div class="muted small">${C.student(e.studentId).grade} класс · ${UI.esc(C.student(e.studentId).school)}</div></div></div></td>
+        <td>${UI.esc(tu.name)}</td>
+        <td class="muted small">${UI.esc((C.db.subjects.find(s => s.id === e.subjectId) || {}).name || '')}</td>
+        <td>${e.status === 'active' ? '<span class="badge b-green">активна</span>' : '<span class="badge b-grey">на паузе</span>'}</td>
+        <td class="muted small">${new Date(e.startedAt).toLocaleDateString('ru-RU')}</td>
+        <td class="num muted">${lessons}</td>
+        <td class="num muted">${sub ? sub.lessonsLeft : '—'}</td>
+        <td class="num"><button class="btn sm ghost act" data-act="link">Изменить</button></td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="links">
+      <div class="head"><div><h2>Привязки ученик ↔ репетитор</h2>
+        <div class="hint">Таблица Enrollment — через неё висят занятия, д/з и статистика</div></div>
+        <button class="btn sm act" data-act="link">Новая привязка</button></div>
+      <table><thead><tr>
+        <th>Ученик</th><th>Репетитор</th><th>Предмет</th><th>Статус</th>
+        <th>С</th><th class="num">Занятий</th><th class="num">Остаток</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="note n-grey" style="margin-top:14px">
+        Смена репетитора не удаляет запись, а закрывает её и создаёт новую —
+        иначе потеряется история статистики ученика. Все действия пишутся в AuditLog.
+      </div></section>`;
+  }
+
+  /* ── абонементы ─────────────────────────────────────────────── */
+  function subsHTML() {
+    const rows = C.db.subscriptions.map(s => {
+      const u = C.studentUser(s.studentId);
+      const payer = C.user(s.payerUserId);
+      const low = s.lessonsLeft <= 1;
+      return `<tr>
+        <td><b>${UI.esc(u.name)}</b></td>
+        <td class="muted small">${UI.esc(payer ? payer.name : '—')}${payer && payer.role === 'parent' ? ' <span class="tag">родитель</span>' : ''}</td>
+        <td>${UI.esc(s.plan)}</td>
+        <td class="num" style="color:${low ? 'var(--red)' : 'inherit'}"><b>${s.lessonsLeft}</b> / ${s.lessonsTotal}</td>
+        <td class="num">${C.fmtMoney(s.price)}</td>
+        <td class="muted small">${s.nextChargeAt ? C.fmtDate(s.nextChargeAt) : '—'}</td>
+        <td>${s.status === 'active' ? '<span class="badge b-green">активен</span>' : '<span class="badge b-grey">пауза</span>'}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="subs" style="margin-top:14px">
+      <div class="head"><div><h2>Абонементы</h2>
+        <div class="hint">Плательщик хранится отдельно от ученика — <code>payer_user_id</code></div></div>
+        <span class="badge b-amber">платежи не подключены</span></div>
+      <table><thead><tr>
+        <th>Ученик</th><th>Плательщик</th><th>Тариф</th><th class="num">Осталось</th>
+        <th class="num">Цена</th><th>Списание</th><th>Статус</th>
+      </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  /* ── банк задач и импорт ────────────────────────────────────── */
+  function bankHTML() {
+    const byNum = {};
+    C.db.tasks.forEach(t => { byNum[t.egeNumber] = (byNum[t.egeNumber] || 0) + 1; });
+    const covered = Object.keys(byNum).length;
+    const auto = C.db.tasks.filter(t => t.autoCheck).length;
+
+    const grid = Array.from({ length: 27 }, (_, i) => i + 1).map(n => {
+      const c = byNum[n] || 0;
+      return `<div style="text-align:center">
+        <div style="height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+          font-weight:650;font-size:13px;
+          background:${c ? 'var(--brand-soft)' : 'var(--bg)'};
+          color:${c ? 'var(--brand)' : 'var(--muted)'};
+          border:1px solid ${c ? 'transparent' : 'var(--line)'}">${c || '—'}</div>
+        <div class="muted" style="font-size:10.5px;margin-top:3px">№${n}</div></div>`;
+    }).join('');
+
+    const rows = C.db.tasks.map(t => `<tr>
+      <td><b>№${t.egeNumber}</b></td>
+      <td>${UI.esc(t.title)}</td>
+      <td class="muted small">${UI.esc((C.topic(t.topicId) || {}).name || '')}</td>
+      <td>${t.autoCheck ? '<span class="badge b-green">авто</span>' : '<span class="badge b-amber">вручную</span>'}</td>
+      <td class="muted small">${UI.esc(t.answerType)} / ${UI.esc(t.compare)}</td>
+      <td class="muted small">${UI.esc(t.source)}</td>
+    </tr>`).join('');
+
+    const shape = JSON.stringify([{
+      id:'q-17-100', egeNumber:17, topicId:'t-str', title:'Заголовок для списка',
+      statement:'Полный текст условия…', answer:'128 51872',
+      answerType:'set', compare:'set', autoCheck:true, difficulty:3, source:'kompege',
+    }], null, 2);
+
+    return `<section class="card" id="bank" style="margin-top:14px">
+      <div class="head"><div><h2>Банк задач</h2>
+        <div class="hint">${C.db.tasks.length} ${C.plural(C.db.tasks.length,'задача','задачи','задач')} ·
+          ${covered} из 27 номеров · ${auto} с автопроверкой</div></div></div>
+
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-bottom:20px">${grid}</div>
+
+      <table><thead><tr>
+        <th>Номер</th><th>Задача</th><th>Тема</th><th>Проверка</th><th>Тип / сверка</th><th>Источник</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </section>
+
+    <section class="card" style="margin-top:14px">
+      <div class="head"><div><h2>Импорт заданий</h2>
+        <div class="hint">Парсер не написан — но приёмник готов и проверяет формат</div></div></div>
+
+      <div class="note n-blue" style="margin-bottom:14px">
+        Парсер должен отдавать массив объектов ровно такой формы. Вставьте JSON —
+        он провалидируется и попадёт в тот же банк, из которого работают все экраны.
+        Ничего в интерфейсе менять не придётся.
+      </div>
+
+      <div class="editor" style="margin-bottom:12px">
+        <div class="ehead"><span>ожидаемый формат</span><span>JSON</span></div>
+        <pre style="min-height:0">${UI.esc(shape)}</pre>
+      </div>
+
+      <textarea id="imp" spellcheck="false" placeholder="вставьте сюда JSON-массив задач"
+        style="width:100%;min-height:130px;padding:12px 14px;border:1.5px solid var(--line);border-radius:11px;
+               background:var(--panel);color:var(--text);font:13px/1.6 var(--mono);resize:vertical"></textarea>
+      <div class="answer">
+        <button class="btn ghost sm" id="imp-demo">Подставить пример</button>
+        <span style="flex:1"></span>
+        <button class="btn" id="imp-run">Импортировать</button>
+      </div>
+      <div id="imp-out"></div>
+
+      <div class="note n-grey" style="margin-top:14px">
+        Обязательные поля: <code>id</code>, <code>egeNumber</code>, <code>title</code>,
+        <code>statement</code>. Если нет <code>topicId</code> — проставится по номеру задания.
+        Если нет <code>answer</code> — задача уйдёт на ручную проверку.
+      </div>
+    </section>`;
+  }
+
+  UI.page({
+    active: (location.hash || '#links').slice(1),
+    head:{ title:'Администрирование', sub:'Привязки, абонементы, банк задач' },
+    body: linksHTML() + subsHTML() + bankHTML(),
+  });
+
+  document.querySelectorAll('.act').forEach(b => b.addEventListener('click', () =>
+    alert('Форма редактирования привязки в прототипе не собрана.\n\n' +
+          'Здесь меняется Enrollment: ученик, репетитор, предмет, статус. ' +
+          'Старая запись закрывается, а не удаляется.')));
+
+  /* ── приёмник импорта ───────────────────────────────────────── */
+  const REQUIRED = ['id','egeNumber','title','statement'];
+
+  function validate(arr) {
+    const errors = [];
+    if (!Array.isArray(arr)) return ['Ожидался массив задач, пришёл ' + typeof arr];
+    const have = new Set(C.db.tasks.map(t => t.id));
+    const seen = new Set();
+    arr.forEach((t, i) => {
+      REQUIRED.forEach(f => { if (t[f] == null || t[f] === '') errors.push(`[${i}] нет поля ${f}`); });
+      if (t.egeNumber != null && !(t.egeNumber >= 1 && t.egeNumber <= 27))
+        errors.push(`[${i}] egeNumber вне 1..27: ${t.egeNumber}`);
+      if (t.id && have.has(t.id)) errors.push(`[${i}] id «${t.id}» уже есть в банке`);
+      if (t.id && seen.has(t.id)) errors.push(`[${i}] id «${t.id}» повторяется в файле`);
+      if (t.id) seen.add(t.id);
+      if (t.compare && !['exact','ci','set'].includes(t.compare))
+        errors.push(`[${i}] compare должен быть exact | ci | set`);
+    });
+    return errors;
+  }
+
+  function normalizeTask(t) {
+    return {
+      id: String(t.id),
+      egeNumber: +t.egeNumber,
+      topicId: t.topicId || C.db.egeTopic[+t.egeNumber] || 't-num',
+      title: String(t.title),
+      statement: String(t.statement),
+      answer: t.answer == null ? '' : String(t.answer),
+      answerType: t.answerType || 'string',
+      compare: t.compare || 'exact',
+      autoCheck: t.autoCheck != null ? !!t.autoCheck : !!(t.answer && String(t.answer).trim()),
+      difficulty: t.difficulty || 2,
+      source: t.source || 'import',
+    };
+  }
+
+  document.getElementById('imp-demo').addEventListener('click', () => {
+    document.getElementById('imp').value = JSON.stringify([{
+      id:'q-18-1', egeNumber:18, title:'Робот и таблица', topicId:'t-dp',
+      statement:'Робот идёт по таблице из левого верхнего угла в правый нижний, собирая монеты. Найдите максимум и минимум.',
+      answer:'143 61', answerType:'set', compare:'set', autoCheck:true, difficulty:2, source:'import-demo',
+    }, {
+      id:'q-25-1', egeNumber:25, title:'Делители числа', topicId:'t-num',
+      statement:'Найдите все натуральные числа в диапазоне, у которых ровно четыре делителя. Выведите числа по возрастанию.',
+      answer:'1004 1006', answerType:'set', compare:'set', autoCheck:true, difficulty:2, source:'import-demo',
+    }], null, 2);
+  });
+
+  document.getElementById('imp-run').addEventListener('click', () => {
+    const out = document.getElementById('imp-out');
+    const raw = document.getElementById('imp').value.trim();
+    if (!raw) { out.innerHTML = `<div class="verdict v-no">Пусто — вставьте JSON.</div>`; return; }
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { out.innerHTML = `<div class="verdict v-no">JSON не разобрался: ${UI.esc(e.message)}</div>`; return; }
+
+    const errors = validate(parsed);
+    if (errors.length) {
+      out.innerHTML = `<div class="verdict v-no">Импорт отклонён, ${errors.length}
+        ${C.plural(errors.length,'ошибка','ошибки','ошибок')}:<br>${errors.slice(0,8).map(UI.esc).join('<br>')}</div>`;
+      return;
+    }
+    parsed.map(normalizeTask).forEach(t => C.db.tasks.push(t));
+    DB.save();
+    out.innerHTML = `<div class="verdict v-ok">Импортировано ${parsed.length}
+      ${C.plural(parsed.length,'задача','задачи','задач')}. Они уже доступны репетитору
+      для прикрепления к занятию. <a href="admin.html#bank">обновить</a></div>`;
+  });
+})();
+</script>
+</body>
+</html>

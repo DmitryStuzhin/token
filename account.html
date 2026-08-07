@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Профиль — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, S = UI.STUDENT;
+  const me = C.studentUser(S);
+  const prof = C.student(S);
+  const tutor = C.tutorOf(S);
+  const goal = C.goalProgress(S);
+  const sub = C.subscriptionOf(S);
+  const guards = C.db.guardians.filter(g => g.studentId === S);
+
+  const PREFS = [
+    { channel:'telegram',        label:'Telegram',           hint: p => p.handle || 'не привязан' },
+    { channel:'email',           label:'Email',              hint: () => 'дайджест раз в неделю' },
+    { channel:'lesson_reminder', label:'Напомнить о занятии',hint: p => 'за ' + Math.round((p.minutesBefore||60)/60) + ' ч' },
+    { channel:'hw_deadline',     label:'Дедлайн по д/з',     hint: () => 'за день до сдачи' },
+  ];
+
+  function prefsHTML() {
+    return PREFS.map(x => {
+      const p = C.db.notificationPrefs.find(n => n.userId === me.id && n.channel === x.channel) || {};
+      return `<label class="toggle">
+        <span class="lbl">${x.label}<small>${UI.esc(x.hint(p))}</small></span>
+        <span class="sw"><input type="checkbox" data-ch="${x.channel}" ${p.enabled ? 'checked' : ''}><i></i></span>
+      </label>`;
+    }).join('');
+  }
+
+  const body = `
+    <div class="cols c2">
+      <div class="stack">
+        <section class="card">
+          <div class="head"><h2>Личные данные</h2><a href="#" id="edit">редактировать</a></div>
+          <div class="field"><div class="k">ФИО</div><div class="v">${UI.esc(me.name)}</div></div>
+          <div class="field"><div class="k">Email</div><div class="v">${UI.esc(me.email)}</div></div>
+          <div class="field"><div class="k">Телефон</div><div class="v">${UI.esc(me.phone)}</div></div>
+          <div class="field"><div class="k">Класс и школа</div><div class="v">${prof.grade} класс · ${UI.esc(prof.school)}</div></div>
+          <div class="field" style="margin-bottom:0"><div class="k">Часовой пояс</div><div class="v">${UI.esc(me.tz)}</div></div>
+        </section>
+
+        <section class="card">
+          <div class="head"><h2>Уведомления</h2><span class="muted small">сохраняются сразу</span></div>
+          ${prefsHTML()}
+        </section>
+
+        <section class="card">
+          <div class="head"><h2>Доступ родителей</h2></div>
+          ${guards.length ? `<div class="row-list">${guards.map(g => {
+            const u = C.user(g.parentUserId);
+            return `<div class="row">
+              ${UI.avatar(u.name)}
+              <span class="grow"><span class="t">${UI.esc(u.name)}</span>
+                <span class="s">${g.relation} · ${g.status === 'confirmed' ? 'подтверждён' : g.status}${g.isPayer ? ' · платит за занятия' : ''}</span></span>
+              <span class="r">только просмотр</span></div>`;
+          }).join('')}</div>` : UI.empty('Родители не подключены','')}
+          <div class="note n-grey" style="margin-top:12px">
+            Родитель видит прогресс, посещаемость и оценки. Не видит содержимое ваших решений
+            и внутренние заметки репетитора. Вы всегда видите, кто подключён.
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        ${goal ? `<section class="card" style="background:var(--brand-soft);border-color:rgba(47,107,255,.2)">
+          <div class="hint" style="margin-bottom:6px">Цель</div>
+          <div style="font-size:16px;font-weight:650;margin-bottom:14px">
+            ЕГЭ ${UI.esc((C.db.subjects[0]||{}).name)} · ${new Date(goal.goal.examDate).toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'})}</div>
+          <div style="font-size:22px;font-weight:750;color:var(--brand);letter-spacing:-.02em;margin-bottom:12px">
+            До экзамена: ${goal.daysToExam} ${C.plural(goal.daysToExam,'день','дня','дней')}</div>
+          ${UI.bar(goal.percent)}
+          <div class="muted small" style="margin-top:8px">
+            ${goal.current} из ${goal.target} ${C.plural(goal.target,'балла','баллов','баллов')} · осталось ${goal.left}</div>
+        </section>` : ''}
+
+        ${tutor ? `<section class="card">
+          <div class="head"><h2>Мой репетитор</h2></div>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            ${UI.avatar(tutor.user.name,'blue')}
+            <div style="flex:1;min-width:120px">
+              <b style="display:block">${UI.esc(tutor.user.name)}</b>
+              <span class="muted small">${UI.esc((C.db.subjects[0]||{}).name)} · ${tutor.profile.yearsExp} года опыта</span>
+            </div>
+            <a class="btn sm" href="lesson.html">К занятию</a>
+          </div>
+          <div class="hint" style="margin-top:12px">Привязка ведётся администратором и хранится в Enrollment.</div>
+        </section>` : ''}
+
+        ${sub ? `<section class="card" style="background:var(--amber-bg);border-color:rgba(217,119,6,.25)">
+          <div class="head"><h2>Абонемент</h2>
+            <span class="badge ${sub.lessonsLeft <= 1 ? 'b-red' : 'b-amber'}">${sub.plan}</span></div>
+          <div style="font-size:19px;font-weight:750;color:var(--amber)">Осталось занятий: ${sub.lessonsLeft}</div>
+          <div class="muted small" style="margin-top:4px">
+            ${sub.nextChargeAt ? 'Списание ' + C.fmtDate(sub.nextChargeAt) + ' · ' + C.fmtMoney(sub.price) : 'Списаний нет'}
+            · платит ${UI.esc((C.user(sub.payerUserId)||{}).name || '—')}</div>
+          <div style="display:flex;gap:5px;margin-top:14px">
+            ${Array.from({length: sub.lessonsTotal}, (_, i) =>
+              `<i style="flex:1;height:7px;border-radius:99px;background:${
+                i < sub.lessonsLeft ? 'var(--amber)' : 'rgba(217,119,6,.22)'}"></i>`).join('')}
+          </div>
+          <div class="note n-grey" style="margin-top:14px">Платежи в прототипе не подключены — блок только показывает состояние.</div>
+        </section>` : ''}
+      </div>
+    </div>`;
+
+  UI.page({
+    active:'account',
+    head:{
+      title:'Профиль',
+      sub:`${prof.grade} класс · ${UI.esc((C.db.subjects[0]||{}).name)} · с ${new Date(prof.startedAt).toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}`,
+      actions:`<a class="btn ghost" href="index.html">На главную</a>`,
+    },
+    body,
+  });
+
+  document.querySelectorAll('[data-ch]').forEach(inp =>
+    inp.addEventListener('change', () => {
+      let p = C.db.notificationPrefs.find(n => n.userId === me.id && n.channel === inp.dataset.ch);
+      if (!p) { p = { userId: me.id, channel: inp.dataset.ch }; C.db.notificationPrefs.push(p); }
+      p.enabled = inp.checked;
+      DB.save();
+    }));
+
+  const ed = document.getElementById('edit');
+  if (ed) ed.addEventListener('click', e => {
+    e.preventDefault();
+    alert('В прототипе форма редактирования не собрана: поля читаются из users / studentProfiles в assets/db.js.');
+  });
+})();
+</script>
+</body>
+</html>

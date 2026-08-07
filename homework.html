@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Д/З — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, S = UI.STUDENT;
+  const all = C.assignmentsOf(S);
+
+  const GROUPS = [
+    { key:'all',      label:'Все',         test:() => true },
+    { key:'active',   label:'Активные',    test:a => ['issued','in_progress','overdue'].includes(a.status) },
+    { key:'submitted',label:'На проверке', test:a => a.status === 'submitted' },
+    { key:'checked',  label:'Проверено',   test:a => a.status === 'checked' },
+  ];
+
+  function summary() {
+    const c = k => all.filter(a => a.status === k).length;
+    const cells = [
+      { v:c('overdue'),  s:'просрочено',  cls:c('overdue') ? 'k-red' : 'k-green' },
+      { v:all.filter(a => a.status !== 'checked' && a.daysLeft >= 0 && a.daysLeft <= 2).length, s:'горит срок', cls:'k-amber' },
+      { v:c('in_progress') + c('issued'), s:'в работе', cls:'k-blue' },
+      { v:c('checked'),  s:'проверено',   cls:'k-green' },
+    ];
+    return `<section class="kpis">${cells.map(x =>
+      `<div class="kpi ${x.cls}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
+  }
+
+  function card(a) {
+    const st = C.ASSIGNMENT_STATUS[a.status];
+    const left = a.daysLeft;
+    const due = left < 0 ? `просрочено на ${Math.abs(left)} ${C.plural(Math.abs(left),'день','дня','дней')}`
+              : left === 0 ? 'сдать сегодня'
+              : `осталось ${left} ${C.plural(left,'день','дня','дней')}`;
+    const pct = a.total ? Math.round((a.done / a.total) * 100) : 0;
+
+    const tasks = a.taskIds.map(id => {
+      const t = C.task(id);
+      const at = C.attemptFor(S, id, { assignmentId: a.id });
+      const state = !at || at.status === 'issued' ? { m:'○', c:'var(--muted)', s:'не начато' }
+        : at.status === 'in_progress' ? { m:'◐', c:'var(--brand)', s:C.fmtDurShort(at.activeSeconds) }
+        : at.status === 'submitted' ? { m:'◍', c:'var(--amber)', s:'на проверке' }
+        : at.isCorrect ? { m:'●', c:'var(--green)', s:'верно' + (at.tries > 1 ? ` (${at.tries} поп.)` : '') }
+        : { m:'✕', c:'var(--red)', s:'неверно' };
+      return `<a class="row" href="task.html?task=${id}&assignment=${a.id}">
+        <span style="color:${state.c};font-size:17px;width:16px;text-align:center">${state.m}</span>
+        <span class="grow"><span class="t">№${t ? t.egeNumber : '?'} · ${UI.esc(t ? t.title : id)}</span>
+          <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}${t && !t.autoCheck ? ' · проверяет репетитор' : ''}</span></span>
+        <span class="r">${state.s}</span></a>`;
+    }).join('');
+
+    return `<section class="card" id="${a.id}" style="border-left:4px solid ${
+      a.status === 'overdue' ? 'var(--red)' :
+      a.status === 'checked' ? 'var(--green)' :
+      a.status === 'submitted' ? 'var(--amber)' : 'var(--brand)'}">
+      <div class="head">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">
+            <span class="badge ${st.cls}">${st.label}</span>
+            <span class="muted small">выдано на занятии ${a.lessonId && C.lesson(a.lessonId)
+              ? C.fmtDate(C.lesson(a.lessonId).startsAt) : '—'}</span>
+          </div>
+          <h2 style="font-size:17px">${UI.esc(a.title)}</h2>
+          <div class="hint">${a.total} ${C.plural(a.total,'задача','задачи','задач')}
+            · потрачено ${C.fmtDurShort(a.seconds)}
+            ${a.done ? ' · верных ' + a.correct + ' из ' + a.done : ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:14px;font-weight:650">${due}</div>
+          <div class="muted small">до ${C.fmtDateTime(a.dueAt)}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        ${UI.bar(pct, a.status === 'overdue' ? 'var(--red)' : null)}
+        <span class="muted small" style="white-space:nowrap">${a.done} из ${a.total}</span>
+      </div>
+      <div class="row-list">${tasks}</div>
+    </section>`;
+  }
+
+  function render(groupKey) {
+    const g = GROUPS.find(x => x.key === groupKey) || GROUPS[0];
+    const list = all.filter(g.test);
+    const filters = `<div class="filters">${GROUPS.map(x =>
+      `<button data-k="${x.key}" class="${x.key === groupKey ? 'on' : ''}">${x.label}
+        <span class="count">${all.filter(x.test).length}</span></button>`).join('')}</div>`;
+    const body = list.length
+      ? list.map(card).join('')
+      : UI.empty('Здесь пусто', 'В этой группе сейчас нет заданий.');
+    document.getElementById('content').innerHTML =
+      summary() + filters + `<div class="stack">${body}</div>`;
+    document.querySelectorAll('.filters button').forEach(b =>
+      b.addEventListener('click', () => render(b.dataset.k)));
+    if (location.hash) {
+      const el = document.querySelector(location.hash);
+      if (el) el.scrollIntoView({ block:'center' });
+    }
+  }
+
+  UI.page({
+    active:'hw',
+    head:{ title:'Домашние задания', sub:'Информатика · 11 класс',
+      actions:`<a class="btn ghost" href="stats.html">Статистика</a>` },
+    body:'',
+  });
+  render('all');
+})();
+</script>
+</body>
+</html>

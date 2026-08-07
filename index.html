@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабинет ученика — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, S = UI.STUDENT;
+  const me = C.studentUser(S);
+  const k = C.kpi(S);
+  const goal = C.goalProgress(S);
+  const nl = C.nextLesson(S);
+  const week = C.dailyActivity(S, 7);
+  const mastery = C.topicMastery(S).slice(0, 4);
+  const todo = C.upcoming(S, 4);
+  const sub = C.subscriptionOf(S);
+
+  /* ── ближайшее занятие ─────────────────────────────────────── */
+  function bannerHTML() {
+    if (!nl) return `<div class="card" style="margin-bottom:14px">${UI.empty(
+      'Занятий не запланировано', 'Расписание появится, когда репетитор поставит занятие.')}</div>`;
+    const when = C.relDay(nl.startsAt) || C.fmtDate(nl.startsAt);
+    const call = (nl.links || []).find(l => l.type === 'call');
+    const live = C.lessonIsLive(nl);
+    return `
+      <section class="banner">
+        <div>
+          <div class="lbl">${live ? 'занятие идёт' : 'следующее занятие'}</div>
+          <div class="val">Информатика · ${when} в ${C.fmtTime(nl.startsAt)}</div>
+          <div class="meta">${nl.durationMin} минут${(nl.taskIds || []).length
+            ? ' · ' + nl.taskIds.length + ' ' + C.plural(nl.taskIds.length, 'задание', 'задания', 'заданий') + ' прикреплено'
+            : ' · заданий пока нет'}</div>
+        </div>
+        <div class="acts">
+          <a class="btn white" href="lesson.html">Открыть занятие</a>
+          ${call ? `<a class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.6)"
+                       href="${call.url}" target="_blank" rel="noopener">Подключиться</a>` : ''}
+        </div>
+      </section>`;
+  }
+
+  /* ── KPI ────────────────────────────────────────────────────── */
+  function kpiHTML() {
+    const cells = [
+      { v: k.accuracy == null ? '—' : k.accuracy + '%', s: 'верных ответов', c: 'k-green' },
+      { v: k.solvedWeek, s: 'задач за неделю', c: 'k-blue' },
+      { v: k.streak + ' ' + C.plural(k.streak, 'день', 'дня', 'дней'), s: 'серия занятий', c: 'k-amber' },
+      { v: k.overdue, s: 'д/з не сдано', c: k.overdue ? 'k-red' : 'k-green' },
+    ];
+    return `<section class="kpis">${cells.map(c =>
+      `<div class="kpi ${c.c}"><b>${c.v}</b><span>${c.s}</span></div>`).join('')}</section>`;
+  }
+
+  /* ── неделя ─────────────────────────────────────────────────── */
+  function weekHTML() {
+    const names = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+    const today = new Date().setHours(0,0,0,0);
+    const cells = week.map(d => {
+      const isToday = d.date.getTime() === today;
+      const cls = ['day', d.solved ? 'has' : '', isToday ? 'today' : ''].filter(Boolean).join(' ');
+      return `<div class="${cls}" title="${d.solved} ${C.plural(d.solved,'задача','задачи','задач')}, ${C.fmtDurShort(d.seconds)}">
+        <div class="d">${names[d.date.getDay()]}</div><div class="n">${d.date.getDate()}</div></div>`;
+    }).join('');
+    const total = week.reduce((s, d) => s + d.solved, 0);
+    const secs = week.reduce((s, d) => s + d.seconds, 0);
+    return `<div class="card">
+      <div class="head"><h2>Эта неделя</h2>
+        <span class="muted small">${total} ${C.plural(total,'задача','задачи','задач')} · ${C.fmtDur(secs)}</span></div>
+      <div class="week">${cells}</div>
+      <div class="heat-scale" style="margin-top:14px">
+        <span><i style="background:var(--brand)"></i> сегодня</span>
+        <span><i style="background:var(--brand-soft)"></i> были решения</span>
+        <span><i style="background:var(--line)"></i> пусто</span>
+      </div>
+    </div>`;
+  }
+
+  /* ── слабые темы ────────────────────────────────────────────── */
+  function masteryHTML() {
+    if (!mastery.length) return `<div class="card"><div class="head"><h2>Слабые темы</h2></div>
+      ${UI.empty('Пока нет данных', 'Появятся после первых решённых задач.')}</div>`;
+    const rows = mastery.map(m => `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px;gap:10px">
+          <b>${m.topic.name}</b>
+          <span class="muted">${m.percent}%${m.delta != null
+            ? ` <em style="font-style:normal;font-weight:650;color:${m.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${m.delta >= 0 ? '↑' : '↓'} ${Math.abs(m.delta)}</em>`
+            : ''}</span>
+        </div>
+        ${UI.bar(m.percent, UI.pctColor(m.percent))}
+      </div>`).join('');
+    return `<div class="card">
+      <div class="head"><h2>Слабые темы</h2><a href="stats.html">вся статистика</a></div>
+      ${rows}</div>`;
+  }
+
+  /* ── ближайшие дела ─────────────────────────────────────────── */
+  function todoHTML() {
+    if (!todo.length) return `<section class="card">
+      <div class="head"><h2>Ближайшие задачи</h2></div>
+      ${UI.empty('Всё сделано', 'Новые задания появятся после занятия.')}</section>`;
+
+    const rows = todo.map(t => {
+      if (t.kind === 'lesson') {
+        return `<a class="row" href="lesson.html">
+          <span class="badge b-violet">занятие</span>
+          <span class="grow"><span class="t">Занятие с репетитором</span>
+            <span class="s">${(t.meta.links || []).length} ${C.plural((t.meta.links||[]).length,'ссылка','ссылки','ссылок')} · ${t.meta.durationMin} мин</span></span>
+          <span class="r">${C.relDay(t.dueAt) || C.fmtDate(t.dueAt)}<br>${C.fmtTime(t.dueAt)}</span></a>`;
+      }
+      const a = t.meta;
+      const left = a.daysLeft;
+      const when = left < 0 ? `просрочено на ${Math.abs(left)} ${C.plural(Math.abs(left),'день','дня','дней')}`
+                 : left === 0 ? 'сегодня' : `осталось ${left} ${C.plural(left,'день','дня','дней')}`;
+      return `<a class="row" href="homework.html#${a.id}">
+        ${UI.badge(a.status)}
+        <span class="grow"><span class="t">${UI.esc(a.title)}</span>
+          <span class="s">${a.done} из ${a.total} · ${C.fmtDurShort(a.seconds)}</span></span>
+        <span class="r">${when}<br>до ${C.fmtDate(a.dueAt)}</span></a>`;
+    }).join('');
+
+    return `<section class="card">
+      <div class="head"><h2>Ближайшие задачи</h2><a href="homework.html">смотреть все</a></div>
+      <div class="row-list">${rows}</div></section>`;
+  }
+
+  /* ── цель и абонемент ───────────────────────────────────────── */
+  function goalHTML() {
+    if (!goal || goal.current == null) return '';
+    return `<div class="card">
+      <div class="head"><h2>Цель</h2><span class="muted small">${goal.goal.targetScore} баллов</span></div>
+      <div style="font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--brand);margin-bottom:10px">
+        До экзамена: ${goal.daysToExam} ${C.plural(goal.daysToExam,'день','дня','дней')}</div>
+      ${UI.bar(goal.percent)}
+      <div class="muted small" style="margin-top:8px">
+        ${goal.current} из ${goal.target} ${C.plural(goal.target,'балла','баллов','баллов')} · осталось ${goal.left}</div>
+    </div>`;
+  }
+
+  function subHTML() {
+    if (!sub) return '';
+    const low = sub.lessonsLeft <= 1;
+    return `<div class="card">
+      <div class="head"><h2>Абонемент</h2>${low ? '<span class="badge b-red">заканчивается</span>' : ''}</div>
+      <div style="font-size:19px;font-weight:750;color:${low ? 'var(--red)' : 'var(--amber)'}">
+        Осталось занятий: ${sub.lessonsLeft}</div>
+      <div class="muted small" style="margin-top:4px">
+        ${sub.nextChargeAt ? 'Следующее списание ' + C.fmtDate(sub.nextChargeAt) + ' · ' + C.fmtMoney(sub.price) : 'Списаний не запланировано'}</div>
+      <div class="note n-grey" style="margin-top:12px">Оплата ведётся родителем. В прототипе платежи не подключены.</div>
+    </div>`;
+  }
+
+  UI.page({
+    active: 'home',
+    head: {
+      title: `Привет, ${me.name.split(' ')[0]}!`,
+      sub: C.fmtDateFull(Date.now()),
+      actions: `<span class="badge b-amber" style="font-size:13px;padding:8px 14px">🔥 серия: ${k.streak} ${C.plural(k.streak,'день','дня','дней')}</span>`,
+    },
+    body: `
+      ${bannerHTML()}
+      ${kpiHTML()}
+      <section class="cols c2w">${weekHTML()}${masteryHTML()}</section>
+      ${todoHTML()}
+      <section class="cols c2" style="margin-top:14px">${goalHTML()}${subHTML()}</section>`,
+  });
+})();
+</script>
+</body>
+</html>

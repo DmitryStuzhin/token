@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20.0 -165.0 1680.0 1494.75" width="1680" height="1495" style="background:#fff">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#343a40"/></marker></defs>
+<text xml:space="preserve" x="880.0" y="-95.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="30" fill="#1e1e1e" text-anchor="middle">Занятие как живая сессия</text>
+<text xml:space="preserve" x="880.0" y="-65.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#868e96" text-anchor="middle">ссылки, задания из базы, наблюдение за решением, автопроверка, учёт времени</text>
+<rect x="60.0" y="60.0" width="1600.0" height="300.0" rx="12" fill="transparent" stroke="#343a40" stroke-width="1" stroke-dasharray="8 6"/>
+<text xml:space="preserve" x="76.0" y="44.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#868e96" text-anchor="start">Во время занятия</text>
+<rect x="100.0" y="110.0" width="420.0" height="210.0" rx="12" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text xml:space="preserve" x="310.0" y="139.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#1e1e1e" text-anchor="middle">Ученик — рабочее место</text>
+<text xml:space="preserve" x="113.0" y="164.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· карточка задания из банка (№17)</text>
+<text xml:space="preserve" x="113.0" y="180.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· редактор кода — черновик,</text>
+<text xml:space="preserve" x="113.0" y="197.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   сохраняется на сервер</text>
+<text xml:space="preserve" x="113.0" y="213.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· поле «ответ»</text>
+<text xml:space="preserve" x="113.0" y="229.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· таймер активного времени</text>
+<text xml:space="preserve" x="113.0" y="245.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· ссылки занятия под рукой</text>
+<rect x="620.0" y="110.0" width="420.0" height="210.0" rx="12" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text xml:space="preserve" x="830.0" y="139.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#1e1e1e" text-anchor="middle">Комната занятия  lesson:{id}</text>
+<text xml:space="preserve" x="633.0" y="164.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">WebSocket, живёт пока идёт занятие</text>
+<text xml:space="preserve" x="633.0" y="180.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start"></text>
+<text xml:space="preserve" x="633.0" y="197.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· presence — кто в комнате</text>
+<text xml:space="preserve" x="633.0" y="213.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· снапшот редактора раз в 2–3 с</text>
+<text xml:space="preserve" x="633.0" y="229.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· «открыл задание», «ответил»</text>
+<text xml:space="preserve" x="633.0" y="245.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· выдача нового задания</text>
+<rect x="1140.0" y="110.0" width="420.0" height="210.0" rx="12" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text xml:space="preserve" x="1350.0" y="139.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#1e1e1e" text-anchor="middle">Репетитор — наблюдение</text>
+<text xml:space="preserve" x="1153.0" y="164.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· видит код ученика почти live</text>
+<text xml:space="preserve" x="1153.0" y="180.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· видит, на каком задании и сколько</text>
+<text xml:space="preserve" x="1153.0" y="197.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· прикрепляет задания из банка</text>
+<text xml:space="preserve" x="1153.0" y="213.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· открывает доску / созвон</text>
+<text xml:space="preserve" x="1153.0" y="229.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· подсказывает в чате занятия</text>
+<text xml:space="preserve" x="1153.0" y="245.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· только смотрит, не правит код</text>
+<polyline points="520.0,190.0 620.0,190.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<text xml:space="preserve" x="570.0" y="182.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#868e96" text-anchor="middle">снапшот кода</text>
+<polyline points="1040.0,190.0 1140.0,190.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<text xml:space="preserve" x="1090.0" y="182.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#868e96" text-anchor="middle">трансляция</text>
+<polyline points="1140.0,265.0 1040.0,265.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<text xml:space="preserve" x="1090.0" y="257.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#868e96" text-anchor="middle">выдать задание</text>
+<rect x="60.0" y="440.0" width="760.0" height="250.0" rx="12" fill="transparent" stroke="#343a40" stroke-width="1" stroke-dasharray="8 6"/>
+<text xml:space="preserve" x="76.0" y="424.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#868e96" text-anchor="start">Ссылки, прикреплённые к занятию (LessonLink)</text>
+<rect x="100.0" y="490.0" width="680.0" height="170.0" rx="12" fill="#ffec99" stroke="#f08c00" stroke-width="2"/>
+<text xml:space="preserve" x="440.0" y="518.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="17" fill="#1e1e1e" text-anchor="middle">Одно занятие — несколько ссылок</text>
+<text xml:space="preserve" x="113.0" y="543.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">созвон  →  Zoom / Телемост / Jitsi — кнопка «Подключиться»</text>
+<text xml:space="preserve" x="113.0" y="559.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">доска  →  Miro / Excalidraw / FigJam — открывается рядом</text>
+<text xml:space="preserve" x="113.0" y="575.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">материал  →  конспект, разбор, PDF — остаётся после занятия</text>
+<text xml:space="preserve" x="113.0" y="592.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start"></text>
+<text xml:space="preserve" x="113.0" y="608.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Тип, а не отдельные поля: завтра добавится ещё один сервис.</text>
+<rect x="880.0" y="440.0" width="780.0" height="250.0" rx="12" fill="transparent" stroke="#343a40" stroke-width="1" stroke-dasharray="8 6"/>
+<text xml:space="preserve" x="896.0" y="424.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#868e96" text-anchor="start">Проверка ответа</text>
+<rect x="920.0" y="490.0" width="350.0" height="170.0" rx="12" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text xml:space="preserve" x="1095.0" y="518.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="17" fill="#1e1e1e" text-anchor="middle">Автопроверка</text>
+<text xml:space="preserve" x="933.0" y="543.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· сверка с эталоном из Task</text>
+<text xml:space="preserve" x="933.0" y="559.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· число / строка / множество</text>
+<text xml:space="preserve" x="933.0" y="575.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· регистр, пробелы, допуск</text>
+<text xml:space="preserve" x="933.0" y="592.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· результат мгновенно —</text>
+<text xml:space="preserve" x="933.0" y="608.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   обоим в комнату</text>
+<rect x="1300.0" y="490.0" width="320.0" height="170.0" rx="12" fill="#ffec99" stroke="#f08c00" stroke-width="2"/>
+<text xml:space="preserve" x="1460.0" y="518.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="17" fill="#1e1e1e" text-anchor="middle">Ручная проверка</text>
+<text xml:space="preserve" x="1313.0" y="543.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· №27 и задачи, где</text>
+<text xml:space="preserve" x="1313.0" y="559.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   нужен сам код</text>
+<text xml:space="preserve" x="1313.0" y="575.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· репетитор ставит балл</text>
+<text xml:space="preserve" x="1313.0" y="592.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   и комментарий</text>
+<text xml:space="preserve" x="1313.0" y="608.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· падает в Review</text>
+<rect x="60.0" y="770.0" width="1600.0" height="280.0" rx="12" fill="transparent" stroke="#343a40" stroke-width="1" stroke-dasharray="8 6"/>
+<text xml:space="preserve" x="76.0" y="754.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="18" fill="#868e96" text-anchor="start">Что записывается и как попадает в статистику</text>
+<rect x="100.0" y="830.0" width="270.0" height="160.0" rx="12" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text xml:space="preserve" x="235.0" y="857.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Ответ отправлен</text>
+<text xml:space="preserve" x="235.0" y="881.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">ученик нажал</text>
+<text xml:space="preserve" x="235.0" y="896.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">«проверить»</text>
+<polyline points="370.0,910.0 410.0,910.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<rect x="410.0" y="830.0" width="270.0" height="160.0" rx="12" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text xml:space="preserve" x="545.0" y="857.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Автопроверка</text>
+<text xml:space="preserve" x="545.0" y="881.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">сверка с эталоном,</text>
+<text xml:space="preserve" x="545.0" y="896.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">верно / неверно</text>
+<polyline points="680.0,910.0 720.0,910.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<rect x="720.0" y="830.0" width="270.0" height="160.0" rx="12" fill="#ffec99" stroke="#f08c00" stroke-width="2"/>
+<text xml:space="preserve" x="855.0" y="857.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">TaskAttempt обновлён</text>
+<text xml:space="preserve" x="855.0" y="881.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">ответ, попытки,</text>
+<text xml:space="preserve" x="855.0" y="896.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">active_seconds</text>
+<polyline points="990.0,910.0 1030.0,910.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<rect x="1030.0" y="830.0" width="270.0" height="160.0" rx="12" fill="#d0bfff" stroke="#6741d9" stroke-width="2"/>
+<text xml:space="preserve" x="1165.0" y="857.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Пересчёт агрегатов</text>
+<text xml:space="preserve" x="1165.0" y="881.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">TaskNumberStats,</text>
+<text xml:space="preserve" x="1165.0" y="896.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">TopicMastery, DailyActivity</text>
+<polyline points="1300.0,910.0 1340.0,910.0" fill="none" stroke="#343a40" stroke-width="2" marker-end="url(#a)"/>
+<rect x="1340.0" y="830.0" width="270.0" height="160.0" rx="12" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text xml:space="preserve" x="1475.0" y="857.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Экраны ученика</text>
+<text xml:space="preserve" x="1475.0" y="881.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">статистика, главная,</text>
+<text xml:space="preserve" x="1475.0" y="896.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="12" fill="#495057" text-anchor="middle">сводка родителю</text>
+<rect x="60.0" y="1120.0" width="520.0" height="169.75" rx="12" fill="#ffc9c9" stroke="#e03131" stroke-width="2"/>
+<text xml:space="preserve" x="320.0" y="1147.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Про время — главная ловушка</text>
+<text xml:space="preserve" x="73.0" y="1172.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">«№5 решался 20 часов» считается только из</text>
+<text xml:space="preserve" x="73.0" y="1188.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">активного времени: вкладка открыта И есть</text>
+<text xml:space="preserve" x="73.0" y="1204.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">события ввода. Иначе забытая на ночь вкладка</text>
+<text xml:space="preserve" x="73.0" y="1220.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">даст 14 часов на одну задачу.</text>
+<text xml:space="preserve" x="73.0" y="1237.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start"></text>
+<text xml:space="preserve" x="73.0" y="1253.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Heartbeat раз в 15–30 с, пауза после 2 мин</text>
+<text xml:space="preserve" x="73.0" y="1269.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">без активности, потолок на одну задачу.</text>
+<rect x="620.0" y="1120.0" width="520.0" height="169.75" rx="12" fill="#b2f2bb" stroke="#2f9e44" stroke-width="2"/>
+<text xml:space="preserve" x="880.0" y="1147.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Про код — не нужен sandbox</text>
+<text xml:space="preserve" x="633.0" y="1172.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Проверяется введённый ответ, а не выполнение</text>
+<text xml:space="preserve" x="633.0" y="1188.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">программы. Редактор — черновик ученика.</text>
+<text xml:space="preserve" x="633.0" y="1204.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Значит на старте не нужен изолированный</text>
+<text xml:space="preserve" x="633.0" y="1220.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">запуск кода: ни контейнеров, ни лимитов CPU.</text>
+<text xml:space="preserve" x="633.0" y="1237.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start"></text>
+<text xml:space="preserve" x="633.0" y="1253.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Автотесты кода для №27 — отдельный большой</text>
+<text xml:space="preserve" x="633.0" y="1269.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">проект. Позже и только если понадобится.</text>
+<rect x="1180.0" y="1120.0" width="480.0" height="169.75" rx="12" fill="#a5d8ff" stroke="#1971c2" stroke-width="2"/>
+<text xml:space="preserve" x="1420.0" y="1147.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="16" fill="#1e1e1e" text-anchor="middle">Что меняется в архитектуре</text>
+<text xml:space="preserve" x="1193.0" y="1172.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">Вариант A остаётся, но:</text>
+<text xml:space="preserve" x="1193.0" y="1188.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start"></text>
+<text xml:space="preserve" x="1193.0" y="1204.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· нужен долгоживущий процесс с WebSocket —</text>
+<text xml:space="preserve" x="1193.0" y="1220.8" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   значит VPS, а не serverless-хостинг</text>
+<text xml:space="preserve" x="1193.0" y="1237.0" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· снапшот кода в одну сторону (ученик →</text>
+<text xml:space="preserve" x="1193.0" y="1253.2" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">   репетитор), без совместного редактирования</text>
+<text xml:space="preserve" x="1193.0" y="1269.5" font-family="Comic Sans MS, Segoe UI, sans-serif" font-size="13" fill="#495057" text-anchor="start">· CRDT (Yjs) — только если оба будут править</text>
+</svg>

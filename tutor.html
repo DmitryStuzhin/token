@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабинет репетитора — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, T = UI.TUTOR;
+  const tp = C.db.tutorProfiles.find(x => x.id === T);
+  const me = C.user(tp.userId);
+  const today = C.tutorToday(T);
+  const queue = C.reviewQueue(T);
+  const sids = C.studentsOfTutor(T);
+
+  function kpiHTML() {
+    const overdueAll = sids.reduce((s, sid) =>
+      s + C.assignmentsOf(sid).filter(a => a.status === 'overdue').length, 0);
+    const solvedWeek = sids.reduce((s, sid) =>
+      s + C.dailyActivity(sid, 7).reduce((x, d) => x + d.solved, 0), 0);
+    const cells = [
+      { v: today.length, s:'занятий сегодня', c:'k-blue' },
+      { v: queue.length, s:'работ на проверке', c: queue.length ? 'k-amber' : 'k-green' },
+      { v: sids.length,  s:'учеников', c:'k-violet' },
+      { v: overdueAll,   s:'просроченных д/з', c: overdueAll ? 'k-red' : 'k-green' },
+    ];
+    return `<section class="kpis">${cells.map(x =>
+      `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
+  }
+
+  function todayHTML() {
+    if (!today.length) return `<section class="card">
+      <div class="head"><h2>Сегодня</h2></div>${UI.empty('Занятий сегодня нет','')}</section>`;
+    const rows = today.map(l => {
+      const sid = C.studentOfLesson(l);
+      const u = C.studentUser(sid);
+      const live = C.lessonIsLive(l);
+      const call = (l.links || []).find(x => x.type === 'call');
+      return `<div class="row">
+        ${UI.avatar(u.name)}
+        <span class="grow"><span class="t">${UI.esc(u.name)}${live ? ' <span class="badge b-green">идёт</span>' : ''}</span>
+          <span class="s">${C.fmtTime(l.startsAt)} · ${l.durationMin} мин ·
+            ${(l.taskIds||[]).length} ${C.plural((l.taskIds||[]).length,'задание','задания','заданий')} ·
+            ${(l.links||[]).length} ${C.plural((l.links||[]).length,'ссылка','ссылки','ссылок')}</span></span>
+        <span class="r" style="display:flex;gap:8px">
+          ${call ? `<a class="btn sm ghost" href="${call.url}" target="_blank" rel="noopener">Созвон</a>` : ''}
+          <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}&student=${sid}">Вести</a>
+        </span></div>`;
+    }).join('');
+    return `<section class="card">
+      <div class="head"><h2>Сегодня</h2><span class="muted small">${C.fmtDateFull(Date.now())}</span></div>
+      <div class="row-list">${rows}</div></section>`;
+  }
+
+  function queueHTML() {
+    if (!queue.length) return `<section class="card">
+      <div class="head"><h2>На проверке</h2></div>
+      ${UI.empty('Очередь пуста','Работы появятся, когда ученики отправят задания с ручной проверкой.')}</section>`;
+    const rows = queue.slice(0, 6).map(q => `
+      <a class="row" href="tutor-check.html?attempt=${q.attempt.id}">
+        <span class="badge b-amber">№${q.task ? q.task.egeNumber : '?'}</span>
+        <span class="grow"><span class="t">${UI.esc(q.user.name)} · ${UI.esc(q.task ? q.task.title : '')}</span>
+          <span class="s">${q.assignment ? UI.esc(q.assignment.title) : 'с занятия'} ·
+            ${C.fmtDur(q.attempt.activeSeconds)} в работе</span></span>
+        <span class="r">отправлено<br>${C.fmtDate(q.attempt.submittedAt)}</span></a>`).join('');
+    return `<section class="card">
+      <div class="head"><h2>На проверке</h2><a href="tutor-check.html">вся очередь</a></div>
+      <div class="row-list">${rows}</div></section>`;
+  }
+
+  function studentsHTML() {
+    const rows = sids.map(sid => {
+      const u = C.studentUser(sid);
+      const k = C.kpi(sid);
+      const en = C.enrollmentsOf(sid)[0];
+      const weak = C.topicMastery(sid)[0];
+      const asg = C.assignmentsOf(sid);
+      const overdue = asg.filter(a => a.status === 'overdue').length;
+      const goal = C.goalProgress(sid);
+      return `<tr>
+        <td><div style="display:flex;align-items:center;gap:10px">
+          ${UI.avatar(u.name)}<div><b>${UI.esc(u.name)}</b>
+          <div class="muted small">${C.student(sid).grade} класс${en && en.status !== 'active' ? ' · привязка на паузе' : ''}</div></div></div></td>
+        <td class="num">${goal && goal.current != null ? goal.current : '—'}</td>
+        <td class="num" style="color:${UI.pctColor(k.accuracy)}">${k.accuracy == null ? '—' : k.accuracy + '%'}</td>
+        <td class="num">${k.solvedWeek}</td>
+        <td class="num">${overdue ? `<span class="badge b-red">${overdue}</span>` : '<span class="muted">0</span>'}</td>
+        <td class="muted small">${weak ? UI.esc(weak.topic.name) + ' · ' + weak.percent + '%' : '—'}</td>
+        <td class="num"><a class="btn sm ghost" href="stats.html?student=${sid}">Статистика</a></td>
+      </tr>`;
+    }).join('');
+    return `<section class="card" id="students" style="margin-top:14px">
+      <div class="head"><div><h2>Ученики</h2>
+        <div class="hint">Список формируется из Enrollment — привязки заводит админ</div></div></div>
+      <table><thead><tr>
+        <th>Ученик</th><th class="num">Пробник</th><th class="num">Верных</th>
+        <th class="num">За неделю</th><th class="num">Просрочки</th><th>Слабая тема</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  UI.page({
+    active:'today',
+    head:{ title:`Здравствуйте, ${me.name.split(' ')[0]}!`,
+      sub:`${sids.length} ${C.plural(sids.length,'ученик','ученика','учеников')} · информатика`,
+      actions:`<a class="btn ghost" href="tutor-check.html">Очередь проверки</a>` },
+    body:`${kpiHTML()}
+      <div class="cols c2">${todayHTML()}${queueHTML()}</div>
+      ${studentsHTML()}`,
+  });
+
+  if (location.hash === '#students') {
+    const el = document.getElementById('students');
+    if (el) el.scrollIntoView({ block:'start' });
+  }
+})();
+</script>
+</body>
+</html>

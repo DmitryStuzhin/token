@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка работ — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core, T = UI.TUTOR;
+  const queue = C.reviewQueue(T);
+  const focusId = UI.qs('attempt');
+  const cur = focusId ? queue.find(q => q.attempt.id === focusId) : queue[0];
+
+  if (!queue.length) {
+    UI.page({ active:'check', head:{ title:'Проверка работ', sub:'Очередь пуста' },
+      body:`<div class="card">${UI.empty('Всё проверено',
+        'Сюда попадают задания без автопроверки — например №27, где нужен сам код.')}</div>` });
+    return;
+  }
+
+  function queueHTML() {
+    return `<div class="card">
+      <div class="head"><h2>Очередь</h2><span class="muted small">${queue.length}</span></div>
+      <div class="tasklist">${queue.map(q => `
+        <a href="tutor-check.html?attempt=${q.attempt.id}" class="${q.attempt.id === cur.attempt.id ? 'cur' : ''}">
+          <span class="badge b-amber">№${q.task ? q.task.egeNumber : '?'}</span>
+          <span class="grow">${UI.esc(q.user.name.split(' ')[0])} · ${UI.esc(q.task ? q.task.title : '')}</span>
+          <span class="muted small">${C.fmtDate(q.attempt.submittedAt)}</span></a>`).join('')}</div>
+    </div>`;
+  }
+
+  const a = cur.attempt, t = cur.task, u = cur.user, asg = cur.assignment;
+
+  const body = `
+    <div class="cols c2w">
+      <div class="stack">
+        <section class="card">
+          <div class="head">
+            <div style="display:flex;align-items:center;gap:12px">
+              ${UI.avatar(u.name)}
+              <div><h2>${UI.esc(u.name)}</h2>
+                <div class="hint">${asg ? UI.esc(asg.title) : 'задание с занятия'} ·
+                  отправлено ${C.fmtDateTime(a.submittedAt)}</div></div>
+            </div>
+            <span class="badge b-amber">ручная проверка</span>
+          </div>
+          <div class="note n-grey" style="margin-bottom:14px">
+            <b>№${t.egeNumber} · ${UI.esc(t.title)}</b><br>${UI.esc(t.statement)}
+          </div>
+          <div class="editor">
+            <div class="ehead"><span>код ученика</span>
+              <span>${C.fmtDur(a.activeSeconds)} активной работы</span></div>
+            <pre>${UI.esc(a.code || '— пусто —')}</pre>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="head"><h2>Оценка</h2></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+            <span class="muted small">Балл:</span>
+            ${[0,1,2].map(n => `<button class="btn sm grey score" data-n="${n}">${n}</button>`).join('')}
+            <span class="muted small">из 2 (первичный балл №${t.egeNumber})</span>
+          </div>
+          <textarea id="comment" placeholder="комментарий ученику — он увидит его в карточке д/з"
+            style="width:100%;min-height:90px;padding:12px 14px;border:1.5px solid var(--line);
+                   border-radius:11px;background:var(--panel);color:var(--text);font:inherit;resize:vertical"></textarea>
+          <div class="answer">
+            <span class="muted small" style="flex:1">Оценка запишется в Review и уйдёт в статистику ученика.</span>
+            <button class="btn" id="save" disabled>Сохранить проверку</button>
+          </div>
+          <div id="done"></div>
+        </section>
+      </div>
+
+      <div class="stack">
+        ${queueHTML()}
+        <div class="card">
+          <div class="head"><h2>Контекст ученика</h2></div>
+          <div class="field"><div class="k">Верных ответов всего</div>
+            <div class="v">${C.kpi(cur.student.id).accuracy || '—'}%</div></div>
+          <div class="field"><div class="k">Слабая тема</div>
+            <div class="v">${(C.topicMastery(cur.student.id)[0] || {}).topic
+              ? UI.esc(C.topicMastery(cur.student.id)[0].topic.name) + ' · ' + C.topicMastery(cur.student.id)[0].percent + '%'
+              : '—'}</div></div>
+          <div class="field" style="margin-bottom:0"><div class="k">Просроченных д/з</div>
+            <div class="v">${C.assignmentsOf(cur.student.id).filter(x => x.status === 'overdue').length}</div></div>
+          <a class="btn ghost sm" style="margin-top:14px" href="stats.html?student=${cur.student.id}">Открыть статистику</a>
+        </div>
+        <div class="note n-grey">
+          Сюда попадают только задания с <code>autoCheck: false</code>.
+          Всё остальное проверяется автоматически и до репетитора не доходит.
+        </div>
+      </div>
+    </div>`;
+
+  UI.page({ active:'check',
+    head:{ title:'Проверка работ', sub:`${queue.length} ${C.plural(queue.length,'работа','работы','работ')} в очереди` },
+    body });
+
+  let score = null;
+  document.querySelectorAll('.score').forEach(b =>
+    b.addEventListener('click', () => {
+      score = +b.dataset.n;
+      document.querySelectorAll('.score').forEach(x => {
+        x.classList.toggle('grey', +x.dataset.n !== score);
+        if (+x.dataset.n === score) x.classList.remove('grey');
+      });
+      document.getElementById('save').disabled = false;
+    }));
+
+  document.getElementById('save').addEventListener('click', () => {
+    C.saveAttempt(a.id, {
+      status:'checked', isCorrect: score > 0,
+      firstTryCorrect: score === 2 && (a.tries || 1) <= 1,
+    });
+    document.getElementById('save').disabled = true;
+    document.getElementById('done').innerHTML =
+      `<div class="verdict ${score > 0 ? 'v-ok' : 'v-no'}">Проверено: ${score} из 2.
+       Ученик увидит оценку и комментарий, работа ушла в статистику.
+       <a href="tutor-check.html">следующая работа →</a></div>`;
+  });
+})();
+</script>
+</body>
+</html>

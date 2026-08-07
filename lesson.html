@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Занятие — arcs.studio</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const C = Core;
+  const asTutor = UI.role() === 'tutor';
+  const S = UI.qs('student') || UI.STUDENT;
+
+  const les = UI.qs('lesson') ? C.lesson(UI.qs('lesson')) : C.nextLesson(S);
+  const stUser = C.studentUser(S);
+
+  if (!les) {
+    UI.page({ active:'lesson', head:{ title:'Занятие' },
+      body:`<div class="card">${UI.empty('Занятие не назначено',
+        'Как только репетитор поставит занятие, оно появится здесь.')}</div>` });
+    return;
+  }
+
+  const live = C.lessonIsLive(les);
+  const call = (les.links || []).find(l => l.type === 'call');
+
+  /* ── шапка ──────────────────────────────────────────────────── */
+  function bannerHTML() {
+    return `<section class="banner">
+      <div>
+        <div class="lbl">${live ? '● занятие идёт' : les.status === 'done' ? 'занятие завершено' : 'занятие запланировано'}</div>
+        <div class="val">${C.relDay(les.startsAt) || C.fmtDate(les.startsAt)} в ${C.fmtTime(les.startsAt)} · ${les.durationMin} мин</div>
+        <div class="meta">${asTutor ? 'Ученик: ' + UI.esc(stUser.name) : 'Репетитор: ' + UI.esc((C.tutorOf(S) || {}).user.name)}</div>
+      </div>
+      <div class="acts">
+        ${call ? `<a class="btn white" href="${call.url}" target="_blank" rel="noopener">Подключиться</a>` : ''}
+        ${asTutor ? `<button class="btn ghost" id="finish"
+            style="color:#fff;border-color:rgba(255,255,255,.6)">Завершить занятие</button>` : ''}
+      </div>
+    </section>`;
+  }
+
+  /* ── ссылки ─────────────────────────────────────────────────── */
+  function linksHTML() {
+    const list = les.links || [];
+    return `<div class="card">
+      <div class="head"><h2>Ссылки занятия</h2>
+        ${asTutor ? '<a href="#" id="addlink">добавить</a>' : ''}</div>
+      ${list.length ? `<div class="links">${list.map(UI.linkRow).join('')}</div>`
+        : UI.empty('Ссылок нет', 'Созвон и доска добавляются репетитором.')}
+      <div class="note n-grey" style="margin-top:12px">
+        Тип ссылки, а не отдельные поля: созвон, доска, материал.
+      </div>
+    </div>`;
+  }
+
+  /* ── задания занятия ────────────────────────────────────────── */
+  function tasksHTML() {
+    const ids = les.taskIds || [];
+    if (!ids.length) return `<div class="card">
+      <div class="head"><h2>Задания занятия</h2>${asTutor ? '<a href="#" id="addtask">прикрепить из банка</a>' : ''}</div>
+      ${UI.empty('Заданий пока нет', asTutor
+        ? 'Прикрепите задачи из банка — ученик увидит их сразу.'
+        : 'Репетитор прикрепит задачи во время занятия.')}</div>`;
+
+    const rows = ids.map(id => {
+      const t = C.task(id);
+      const at = C.attemptFor(S, id, { lessonId: les.id }) || {};
+      const state = !at.status || at.status === 'issued' ? { m:'○', c:'var(--muted)', s:'не открыто' }
+        : at.status === 'in_progress' ? { m:'◐', c:'var(--brand)', s:'решает · ' + C.fmtDurShort(at.activeSeconds) }
+        : at.status === 'submitted' ? { m:'◍', c:'var(--amber)', s:'ждёт проверки' }
+        : at.isCorrect ? { m:'●', c:'var(--green)', s:'верно · ' + C.fmtDurShort(at.activeSeconds) }
+        : { m:'✕', c:'var(--red)', s:'неверно · ' + C.fmtDurShort(at.activeSeconds) };
+      const href = asTutor ? `#watch-${id}` : `task.html?task=${id}&lesson=${les.id}`;
+      return `<a class="row" href="${href}" ${asTutor ? `data-watch="${id}"` : ''}>
+        <span style="color:${state.c};font-size:17px;width:16px;text-align:center">${state.m}</span>
+        <span class="grow"><span class="t">№${t ? t.egeNumber : '?'} · ${UI.esc(t ? t.title : id)}</span>
+          <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}</span></span>
+        <span class="r">${state.s}</span></a>`;
+    }).join('');
+
+    return `<div class="card">
+      <div class="head"><h2>Задания занятия</h2>
+        ${asTutor ? '<a href="#" id="addtask">прикрепить из банка</a>' : ''}</div>
+      <div class="row-list">${rows}</div></div>`;
+  }
+
+  /* ── панель наблюдения (только репетитор) ───────────────────── */
+  function watchHTML() {
+    const ids = les.taskIds || [];
+    const cur = ids.map(id => C.attemptFor(S, id, { lessonId: les.id }))
+      .filter(Boolean)
+      .sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
+    const t = cur ? C.task(cur.taskId) : null;
+    return `<div class="card">
+      <div class="head">
+        <h2>Экран ученика</h2>
+        <span class="muted small"><span class="dot ${cur && cur.status === 'in_progress' ? '' : 'off'}"></span>
+          обновление раз в 2 с</span>
+      </div>
+      <div id="watch">
+        ${!cur || !t ? UI.empty('Ученик ещё не открыл задание', 'Как только откроет — здесь появится его черновик.')
+          : `<div class="hint" style="margin-bottom:10px">Сейчас: №${t.egeNumber} · ${UI.esc(t.title)}
+              · ${C.fmtDur(cur.activeSeconds)} · попыток ${cur.tries || 0}</div>
+             <div class="editor"><pre id="watch-code">${UI.esc(cur.code || '— пусто —')}</pre></div>`}
+      </div>
+      <div class="note n-blue" style="margin-top:12px">
+        В прототипе снапшот идёт через localStorage между вкладками.
+        В бою — WebSocket-комната <code>lesson:${les.id}</code>.
+        Откройте вторую вкладку в роли ученика и начните печатать.
+      </div>
+    </div>`;
+  }
+
+  /* ── заметка ────────────────────────────────────────────────── */
+  function noteHTML() {
+    const n = les.note;
+    return `<div class="card">
+      <div class="head"><h2>Заметка по занятию</h2>
+        ${n ? `<span class="badge b-grey">видит: ${
+          n.visibility === 'parent' ? 'ученик и родитель' :
+          n.visibility === 'student' ? 'только ученик' : 'только репетитор'}</span>` : ''}</div>
+      ${n ? `<p style="font-size:14.5px">${UI.esc(n.text)}</p>
+             <div class="hint" style="margin-top:8px">Разобрано: ${
+               (n.topics||[]).map(id => UI.esc((C.topic(id)||{}).name||'')).join(', ') || '—'}</div>`
+          : UI.empty('Заметки нет', asTutor ? 'Появится после занятия.' : 'Репетитор добавит после занятия.')}
+    </div>`;
+  }
+
+  /* ── выбор задачи из банка ──────────────────────────────────── */
+  function pickerHTML() {
+    const rows = C.db.tasks.map(t => `
+      <a class="row" href="#" data-pick="${t.id}">
+        <span class="badge b-blue">№${t.egeNumber}</span>
+        <span class="grow"><span class="t">${UI.esc(t.title)}</span>
+          <span class="s">${UI.esc((C.topic(t.topicId)||{}).name||'')} · сложность ${t.difficulty}/3</span></span>
+        <span class="r">${(les.taskIds||[]).includes(t.id) ? 'уже прикреплено' : 'прикрепить'}</span></a>`).join('');
+    return `<div class="card" id="picker" style="margin-top:14px">
+      <div class="head"><h2>Банк задач</h2><a href="#" id="closepick">закрыть</a></div>
+      <div class="row-list">${rows}</div>
+      <div class="note n-grey" style="margin-top:12px">
+        В банке ${C.db.tasks.length} ${C.plural(C.db.tasks.length,'задача','задачи','задач')} —
+        это сид. Импорт наполняет ту же таблицу, экраны меняться не будут.
+      </div>
+    </div>`;
+  }
+
+  const body = asTutor
+    ? `${bannerHTML()}
+       <div class="cols c2w">
+         <div class="stack">${watchHTML()}${tasksHTML()}</div>
+         <div class="stack">${linksHTML()}${noteHTML()}</div>
+       </div>
+       <div id="picker-slot"></div>`
+    : `${bannerHTML()}
+       <div class="cols c2w">
+         <div class="stack">${tasksHTML()}${noteHTML()}</div>
+         <div class="stack">${linksHTML()}
+           <div class="note n-blue">Во время занятия репетитор видит ваш черновик кода —
+             это нормально, так он подсказывает быстрее.</div>
+         </div>
+       </div>`;
+
+  UI.page({
+    active:'lesson',
+    head:{ title: asTutor ? 'Занятие · ' + stUser.name.split(' ')[0] : 'Занятие',
+           sub: C.fmtDateFull(les.startsAt) },
+    body,
+  });
+
+  /* ── интерактив ─────────────────────────────────────────────── */
+  if (asTutor) {
+    const slot = document.getElementById('picker-slot');
+    const openPicker = e => {
+      if (e) e.preventDefault();
+      slot.innerHTML = pickerHTML();
+      slot.scrollIntoView({ behavior:'smooth', block:'start' });
+      document.getElementById('closepick').addEventListener('click', ev => {
+        ev.preventDefault(); slot.innerHTML = '';
+      });
+      slot.querySelectorAll('[data-pick]').forEach(a =>
+        a.addEventListener('click', ev => {
+          ev.preventDefault();
+          const id = a.dataset.pick;
+          if (!(les.taskIds || []).includes(id)) {
+            les.taskIds = (les.taskIds || []).concat(id);
+            C.ensureAttempt(S, id, { lessonId: les.id });
+            DB.save();
+          }
+          location.reload();
+        }));
+    };
+    const add = document.getElementById('addtask');
+    if (add) add.addEventListener('click', openPicker);
+
+    const fin = document.getElementById('finish');
+    if (fin) fin.addEventListener('click', () => {
+      alert('В прототипе статус занятия не меняется: это действие пишет Lesson.status = «проведено» ' +
+            'и списывает занятие с абонемента.');
+    });
+
+    /* снапшот экрана ученика */
+    setInterval(() => {
+      const ids = les.taskIds || [];
+      let raw = null;
+      try { raw = JSON.parse(localStorage.getItem(DB.LS_KEY) || 'null'); } catch (e) {}
+      if (!raw || !raw.attempts) return;
+      const mine = raw.attempts.filter(a => {
+        const full = C.attempt(a.id);
+        return full && full.lessonId === les.id && ids.includes(full.taskId);
+      });
+      if (!mine.length) return;
+      const top = mine.sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
+      const pre = document.getElementById('watch-code');
+      if (pre) pre.textContent = top.code || '— пусто —';
+    }, 2000);
+  }
+})();
+</script>
+</body>
+</html>
