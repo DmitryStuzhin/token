@@ -35,7 +35,7 @@ window.DB = (function () {
     [1,1,'m-plan'],[2,1,'m-vect'],[3,1,'m-prob'],[4,1,'m-prob'],[5,1,'m-stereo'],
     [6,1,'m-func'],[7,1,'m-func'],[8,1,'m-func'],[9,1,'m-text'],[10,1,'m-text'],
     [11,1,'m-func'],[12,2,'m-trig'],[13,2,'m-stereo'],[14,2,'m-ineq'],
-    [15,2,'m-text'],[16,3,'m-plan'],[17,3,'m-param'],[18,4,'m-theory'],
+    [15,2,'m-text'],[16,4,'m-plan'],[17,4,'m-param'],[18,5,'m-theory'],
   ];
 
   const mkParts = rows => rows.map(([number, maxPoints, topicId]) => ({ number, maxPoints, topicId }));

@@ -250,6 +250,7 @@
   }
 
   UI.page({
+    role:'admin',
     active:(location.hash || '#links').slice(1),
     head:{ title:'Администрирование',
       sub:`${C.db.subjects.length} ${C.plural(C.db.subjects.length,'предмет','предмета','предметов')} ·

@@ -17,7 +17,7 @@
   const gs = gid ? C.groupStats(gid) : null;
 
   if (!gs) {
-    UI.page({ active:'groups', head:{ title:'Группа не найдена' },
+    UI.page({ role:'tutor', active:'groups', head:{ title:'Группа не найдена' },
       body:`<div class="card">${UI.empty('Нет такой группы',
         '<a href="tutor.html#groups">к списку групп</a>')}</div>` });
     return;
@@ -131,6 +131,7 @@
   }
 
   UI.page({
+    role:'tutor',
     active:'groups',
     head:{ title: g.title,
       sub:`${UI.esc(gs.subject.name)} · ${g.level} · ${g.schedule}`,

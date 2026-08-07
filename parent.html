@@ -17,7 +17,7 @@
   const kids = C.childrenOf(P);
 
   if (!kids.length) {
-    UI.page({ active:'progress', head:{ title:'Кабинет родителя' },
+    UI.page({ role:'parent', active:'progress', head:{ title:'Кабинет родителя' },
       body:`<div class="card">${UI.empty('Дети не подключены',
         'Доступ выдаётся по приглашению и подтверждается — запись Guardian.')}</div>` });
     return;
@@ -157,6 +157,7 @@
   }
 
   UI.page({
+    role:'parent',
     active:'progress',
     head:{ title:`Прогресс · ${kid.name.split(' ')[0]}`,
       sub:`${C.student(S).grade} класс · ${C.subjectsOf(S).map(x => UI.esc(x.name)).join(', ')} · доступ только на чтение`,

@@ -18,7 +18,7 @@
   const cur = focusId ? queue.find(q => q.attempt.id === focusId) : queue[0];
 
   if (!queue.length) {
-    UI.page({ active:'check', head:{ title:'Проверка работ', sub:'Очередь пуста' },
+    UI.page({ role:'tutor', active:'check', head:{ title:'Проверка работ', sub:'Очередь пуста' },
       body:`<div class="card">${UI.empty('Всё проверено',
         'Сюда попадают задания без автопроверки — например №27, где нужен сам код.')}</div>` });
     return;
