@@ -3,24 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Решение задачи — arcs.studio</title>
+<title>Решение задачи — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
-  const C = Core, S = UI.STUDENT;
-  const asRole = UI.role();
+  const ses = Auth.require('student');
+  if (!ses) return;
+  const C = Core;
+  const S = ses.studentId;
   const taskId = UI.qs('task');
   const asgId  = UI.qs('assignment');
   const lesId  = UI.qs('lesson');
   const t = C.task(taskId);
 
   if (!t) {
-    UI.page({ active:'hw', head:{ title:'Задача не найдена' },
+    UI.page({ session: ses, active:'hw', head:{ title:'Задача не найдена' },
       body:`<div class="card">${UI.empty('Нет такой задачи в банке',
         'Возможно, ссылка устарела. <a href="homework.html">Вернуться к д/з</a>')}</div>` });
     return;
@@ -125,7 +128,7 @@
       </div>
     </div>`;
 
-  UI.page({ active: lesId ? 'lesson' : 'hw',
+  UI.page({ session: ses, active: lesId ? 'lesson' : 'hw',
     head: { title:'Решение задачи', sub:`${asg ? UI.esc(asg.title) : les ? 'Задание с занятия' : 'Практика'}` },
     body });
 

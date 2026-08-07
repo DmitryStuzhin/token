@@ -3,18 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Статистика — arcs.studio</title>
+<title>Статистика — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
+  const ses = Auth.require();
+  if (!ses) return;
   const C = Core;
-  const asParent = UI.role() === 'parent';
-  const S = UI.qs('student') || UI.STUDENT;
+  const asParent = ses.role === 'parent';
+  const S = UI.qs('student') || ses.studentId;
   const stUser = C.studentUser(S);
   let subj = UI.subjectId(S);
 
@@ -256,9 +259,10 @@
     ${UI.subjectSwitcher(S, subj)}${periodSwitcher}</div>`;
 
   UI.page({
+    session: ses,
     active: asParent ? 'stats' : 'stats',
     head:{ title:'Статистика',
-      sub: (UI.role() === 'student' ? 'Всё считается из решённых задач'
+      sub: (ses.role === 'student' ? 'Всё считается из решённых задач'
         : UI.esc(stUser.name) + (asParent ? ' · только просмотр' : ' · глазами репетитора'))
         + ' · ' + C.subjectsOf(S).map(x => x.name).join(', '),
       actions: switcher },

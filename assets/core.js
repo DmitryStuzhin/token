@@ -300,9 +300,12 @@ window.Core = (function () {
   /* ── посещаемость ────────────────────────────────────────────── */
   function attendance(sid, days, subjectId) {
     const from = Date.now() - days * DAY;
+    /* занятие учитывается, если оно уже прошло ИЛИ явно закрыто
+       репетитором: статус важнее расписания */
     const ls = lessonsOf(sid, subjectId).filter(l => {
       const t = new Date(l.startsAt).getTime();
-      return t >= from && t <= Date.now();
+      if (t < from) return false;
+      return t <= Date.now() || l.status !== 'planned';
     });
     const c = { present:0, late:0, absent:0, moved:0 };
     let minutes = 0;
@@ -545,6 +548,120 @@ window.Core = (function () {
     return base + 'invite.html?code=' + encodeURIComponent(code);
   };
 
+  /* ── занятия: создание и наполнение репетитором ──────────────── */
+  function createLesson(opts) {
+    const l = {
+      id: 'l-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      subjectId: opts.subjectId,
+      tutorId: opts.tutorId,
+      enrollmentId: opts.enrollmentId || null,
+      groupId: opts.groupId || null,
+      startsAt: opts.startsAt,
+      durationMin: +opts.durationMin || 60,
+      status: 'planned',
+      links: [], taskIds: [],
+    };
+    db.lessons.push(l); DB.save();
+    return l;
+  }
+
+  function addLessonLink(lessonId, link) {
+    const l = lesson(lessonId); if (!l) return null;
+    const url = String(link.url || '').trim();
+    if (!url) return { error: 'Пустая ссылка' };
+    if (!/^https?:\/\//i.test(url)) return { error: 'Ссылка должна начинаться с http:// или https://' };
+    l.links = (l.links || []).concat({
+      type: link.type || 'material',
+      label: String(link.label || '').trim() || defaultLabel(link.type, url),
+      url,
+    });
+    DB.save();
+    return { ok: true, link: l.links[l.links.length - 1] };
+  }
+
+  function defaultLabel(type, url) {
+    const host = (url.match(/^https?:\/\/([^/]+)/i) || [, ''])[1].replace(/^www\./, '');
+    return ({ call:'Созвон', board:'Доска', material:'Материал' }[type] || 'Ссылка') + (host ? ' · ' + host : '');
+  }
+
+  function removeLessonLink(lessonId, index) {
+    const l = lesson(lessonId); if (!l) return;
+    l.links.splice(index, 1); DB.save();
+  }
+
+  /* задача с занятия сразу разворачивается в попытку каждому ученику */
+  function attachTask(lessonId, taskId) {
+    const l = lesson(lessonId); if (!l) return null;
+    if ((l.taskIds || []).includes(taskId)) return { error: 'Задача уже прикреплена' };
+    l.taskIds = (l.taskIds || []).concat(taskId);
+    studentsOfLesson(l).forEach(sid => ensureAttempt(sid, taskId, { lessonId: l.id, groupId: l.groupId }));
+    DB.save();
+    return { ok: true };
+  }
+
+  function detachTask(lessonId, taskId) {
+    const l = lesson(lessonId); if (!l) return;
+    l.taskIds = (l.taskIds || []).filter(x => x !== taskId);
+    /* нетронутые попытки убираем, начатые оставляем — это уже работа ученика */
+    db.attempts = db.attempts.filter(a =>
+      !(a.lessonId === lessonId && a.taskId === taskId && a.status === 'issued'));
+    DB.save();
+  }
+
+  function setLessonStatus(lessonId, status) {
+    const l = lesson(lessonId); if (!l) return;
+    l.status = status;
+    if (status === 'done') {
+      studentsOfLesson(l).forEach(sid => {
+        if (!db.lessonAttendance.some(a => a.lessonId === l.id && a.studentId === sid))
+          db.lessonAttendance.push({ lessonId: l.id, studentId: sid, status: 'present' });
+        const sub = subscriptionOf(sid);
+        if (sub && sub.lessonsLeft > 0) sub.lessonsLeft -= 1;
+      });
+    }
+    DB.save();
+    return l;
+  }
+
+  function createAssignment(opts) {
+    const a = {
+      id: 'a-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      subjectId: opts.subjectId,
+      enrollmentId: opts.enrollmentId || null,
+      groupId: opts.groupId || null,
+      lessonId: opts.lessonId || null,
+      title: opts.title,
+      dueAt: opts.dueAt,
+      taskIds: opts.taskIds || [],
+    };
+    db.assignments.push(a);
+    const students = a.groupId ? membersOf(a.groupId).map(m => m.studentId)
+      : (byId(db.enrollments, a.enrollmentId) ? [byId(db.enrollments, a.enrollmentId).studentId] : []);
+    students.forEach(sid => a.taskIds.forEach(t => ensureAttempt(sid, t, { assignmentId: a.id, groupId: a.groupId })));
+    DB.save();
+    return a;
+  }
+
+  function setGoal(sid, subjectId, targetScore, examDate) {
+    let g = db.goals.find(x => x.studentId === sid && x.subjectId === subjectId);
+    if (!g) { g = { studentId: sid, subjectId }; db.goals.push(g); }
+    g.targetScore = +targetScore; g.examDate = examDate;
+    DB.save();
+    return g;
+  }
+
+  function createGroup(opts) {
+    const g = {
+      id: 'gr-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      tutorId: opts.tutorId, subjectId: opts.subjectId,
+      title: opts.title, level: opts.level || 'база',
+      schedule: opts.schedule || '', capacity: +opts.capacity || 8,
+      status: 'recruiting', createdAt: new Date().toISOString().slice(0, 10),
+    };
+    db.groups.push(g); DB.save();
+    return g;
+  }
+
   /* ── мутации ─────────────────────────────────────────────────── */
   function saveAttempt(id, patch) {
     const a = attempt(id); if (!a) return null;
@@ -624,6 +741,8 @@ window.Core = (function () {
     inviteByCode, inviteState, inviteTarget, inviteAlreadyJoined, acceptInvite,
     createInvite, revokeInvite, invitesOfTutor, inviteUrl,
     saveAttempt, ensureAttempt,
+    createLesson, addLessonLink, removeLessonLink, attachTask, detachTask,
+    setLessonStatus, createAssignment, setGoal, createGroup,
     fmtTime, fmtDate, fmtDateFull, fmtDateTime, relDay, plural, fmtDur, fmtDurShort, fmtMoney,
   };
 })();

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход — Token</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 18px}
+  .auth-box{width:100%;max-width:460px}
+  .auth h1{font-size:30px;text-align:center;margin-bottom:6px}
+  .auth .lead{text-align:center;color:var(--muted);font-size:14px;margin-bottom:24px}
+  .tabs{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);
+    border-radius:99px;padding:4px;margin-bottom:18px}
+  .tabs button{flex:1;background:transparent;border:0;color:var(--muted);padding:10px;
+    border-radius:99px;font:inherit;font-weight:650;cursor:pointer}
+  .tabs button.on{background:var(--brand);color:#fff}
+  .fld{margin-bottom:13px}
+  .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .fld input,.fld select{width:100%;padding:12px 14px;border:1.5px solid var(--line);
+    border-radius:11px;background:var(--panel);color:var(--text);font:inherit}
+  .fld input:focus,.fld select:focus{outline:0;border-color:var(--brand)}
+  .roles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+  .role{border:1.5px solid var(--line);border-radius:12px;padding:12px 10px;cursor:pointer;
+    background:var(--panel);text-align:center}
+  .role b{display:block;font-size:14px;margin-bottom:3px}
+  .role span{font-size:11px;color:var(--muted);line-height:1.35;display:block}
+  .role.on{border-color:var(--brand);background:var(--brand-soft)}
+  .role.off{opacity:.5;cursor:not-allowed}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .quick a{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:11px;text-decoration:none;color:inherit;margin-bottom:8px}
+  .quick a:hover{border-color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="auth"><div class="auth-box" id="box"></div></div>
+
+<script src="assets/db.js"></script>
+<script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
+<script src="assets/ui.js"></script>
+<script>
+(function () {
+  const next = UI.qs('next');
+  const already = Auth.session();
+  if (already && !UI.qs('force')) { location.href = next || already.home; return; }
+
+  let mode = Auth.isEmpty() ? 'signup' : (UI.qs('mode') || 'signin');
+  let role = UI.qs('role') || 'tutor';
+
+  function go(user) {
+    const home = Auth.ROLES[user.role].home;
+    location.href = next || home;
+  }
+
+  function rolesHTML() {
+    return `<div class="roles">${Object.keys(Auth.ROLES).map(k => {
+      const r = Auth.ROLES[k];
+      const cls = !r.enabled ? 'role off' : (k === role ? 'role on' : 'role');
+      return `<div class="${cls}" data-role="${k}" ${r.enabled ? '' : 'title="пока недоступно"'}>
+        <b>${r.label}</b><span>${r.enabled ? r.hint : 'скоро'}</span></div>`;
+    }).join('')}</div>`;
+  }
+
+  function quickHTML() {
+    const acc = Auth.accounts();
+    if (!acc.length) return '';
+    return `<div class="card" style="margin-top:16px">
+      <div class="head"><h2>Аккаунты на этом устройстве</h2>
+        <span class="muted small">вход без пароля</span></div>
+      <div class="quick">${acc.map(a => `
+        <a href="#" data-uid="${a.id}">
+          ${UI.avatar(a.name, a.role === 'tutor' ? 'blue' : '')}
+          <span style="flex:1;min-width:0">
+            <b style="display:block;font-size:14px">${UI.esc(a.name)}</b>
+            <span class="muted small">${UI.esc(a.email)}</span></span>
+          <span class="badge ${a.role === 'tutor' ? 'b-blue' : 'b-green'}">${Auth.ROLES[a.role].label}</span>
+        </a>`).join('')}</div>
+      <div class="hint">Быстрое переключение для проверки: зайдите репетитором, выпустите
+        ссылку-приглашение, затем вернитесь сюда и войдите учеником.</div>
+    </div>`;
+  }
+
+  function render() {
+    const signup = mode === 'signup';
+    document.getElementById('box').innerHTML = `
+      <h1>Token</h1>
+      <div class="lead">Подготовка к экзамену с репетитором</div>
+
+      <div class="tabs">
+        <button data-mode="signin" class="${signup ? '' : 'on'}">Вход</button>
+        <button data-mode="signup" class="${signup ? 'on' : ''}">Регистрация</button>
+      </div>
+
+      <section class="card">
+        ${signup ? `
+          <div class="hint" style="margin-bottom:12px">Кем вы будете пользоваться Token?</div>
+          ${rolesHTML()}
+          <div class="fld"><label>Имя и фамилия</label>
+            <input id="f-name" placeholder="Дмитрий Стужин" autocomplete="name"></div>
+          <div class="fld"><label>Email</label>
+            <input id="f-email" type="email" placeholder="you@mail.ru" autocomplete="email"></div>
+          <div class="fld"><label>Пароль</label>
+            <input id="f-pass" type="password" placeholder="минимум 4 символа" autocomplete="new-password"></div>
+          <div id="role-extra"></div>
+          <button class="btn" id="do-signup" style="width:100%;justify-content:center;margin-top:6px">
+            Создать аккаунт</button>
+        ` : `
+          <div class="fld"><label>Email</label>
+            <input id="f-email" type="email" placeholder="you@mail.ru" autocomplete="email"></div>
+          <div class="fld"><label>Пароль</label>
+            <input id="f-pass" type="password" autocomplete="current-password"></div>
+          <button class="btn" id="do-signin" style="width:100%;justify-content:center;margin-top:6px">
+            Войти</button>
+        `}
+        <div id="out"></div>
+      </section>
+
+      ${signup ? '' : quickHTML()}
+
+      <div class="note n-grey" style="margin-top:16px">
+        Прототип: аккаунты и данные хранятся в localStorage этого браузера, пароль
+        хешируется примитивно. В боевой версии — сервер, argon2 и сессия в httpOnly-куке.
+      </div>`;
+
+    document.querySelectorAll('[data-mode]').forEach(b =>
+      b.addEventListener('click', () => { mode = b.dataset.mode; render(); }));
+
+    document.querySelectorAll('[data-role]').forEach(el =>
+      el.addEventListener('click', () => {
+        const k = el.dataset.role;
+        if (!Auth.ROLES[k].enabled) {
+          document.getElementById('out').innerHTML =
+            `<div class="verdict v-wait">Роль «${Auth.ROLES[k].label}» пока не реализована —
+             кабинет родителя появится позже.</div>`;
+          return;
+        }
+        role = k; render();
+      }));
+
+    if (signup) renderExtra();
+
+    const su = document.getElementById('do-signup');
+    if (su) su.addEventListener('click', doSignup);
+    const si = document.getElementById('do-signin');
+    if (si) si.addEventListener('click', doSignin);
+
+    document.querySelectorAll('[data-uid]').forEach(a =>
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const res = Auth.loginAs(a.dataset.uid);
+        if (res.ok) go(res.user);
+      }));
+
+    const box = document.getElementById('box');
+    box.querySelectorAll('input').forEach(inp =>
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') (signup ? doSignup() : doSignin()); }));
+  }
+
+  function renderExtra() {
+    const slot = document.getElementById('role-extra');
+    if (!slot) return;
+    if (role === 'tutor') {
+      const subs = Core.db.subjects.map(s =>
+        `<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:6px">
+           <input type="checkbox" class="f-subj" value="${s.id}" ${s.id === 'inf' ? 'checked' : ''}
+                  style="width:auto"> ${UI.esc(s.name)}</label>`).join('');
+      slot.innerHTML = `
+        <div class="fld"><label>Предметы, которые вы ведёте</label>
+          <div style="padding:10px 12px;border:1.5px solid var(--line);border-radius:11px">${subs}</div></div>
+        <div class="row2">
+          <div class="fld"><label>Опыт, лет</label><input id="f-exp" type="number" min="0" value="3"></div>
+          <div class="fld"><label>Ставка, ₽/занятие</label><input id="f-rate" type="number" min="0" value="3000"></div>
+        </div>`;
+    } else if (role === 'student') {
+      slot.innerHTML = `<div class="row2">
+        <div class="fld"><label>Класс</label><input id="f-grade" type="number" min="5" max="11" value="11"></div>
+        <div class="fld"><label>Школа</label><input id="f-school" placeholder="необязательно"></div>
+      </div>`;
+    } else {
+      slot.innerHTML = '';
+    }
+  }
+
+  function doSignup() {
+    const data = {
+      role,
+      name: (document.getElementById('f-name') || {}).value,
+      email: (document.getElementById('f-email') || {}).value,
+      password: (document.getElementById('f-pass') || {}).value,
+      grade: (document.getElementById('f-grade') || {}).value,
+      school: (document.getElementById('f-school') || {}).value,
+      yearsExp: (document.getElementById('f-exp') || {}).value,
+      rate: (document.getElementById('f-rate') || {}).value,
+      subjects: [...document.querySelectorAll('.f-subj:checked')].map(x => x.value),
+    };
+    const res = Auth.register(data);
+    if (!res.ok) { document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`; return; }
+    go(res.user);
+  }
+
+  function doSignin() {
+    const res = Auth.login(
+      (document.getElementById('f-email') || {}).value,
+      (document.getElementById('f-pass') || {}).value);
+    if (!res.ok) { document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`; return; }
+    go(res.user);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

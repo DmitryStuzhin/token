@@ -3,51 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Занятие — arcs.studio</title>
+<title>Занятие — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
+  const ses = Auth.require();
+  if (!ses) return;
   const C = Core;
-  const asTutor = UI.role() === 'tutor';
-  const S = UI.qs('student') || UI.STUDENT;
+  const asTutor = ses.role === 'tutor';
 
-  const les = UI.qs('lesson') ? C.lesson(UI.qs('lesson')) : C.nextLesson(S);
-  const grp = les && les.groupId ? C.group(les.groupId) : null;
-  const roster = les ? C.studentsOfLesson(les) : [];
-  const watchSid = asTutor && grp ? (UI.qs('student') || roster[0]) : S;
-  const stUser = C.studentUser(watchSid || S);
+  /* какое занятие показываем */
+  let les = UI.qs('lesson') ? C.lesson(UI.qs('lesson')) : null;
+  if (!les && !asTutor) les = C.nextLesson(ses.studentId);
+  if (!les && asTutor) {
+    const mine = C.tutorToday(ses.tutorId);
+    les = mine[0] || C.db.lessons
+      .filter(l => l.tutorId === ses.tutorId && l.status === 'planned')
+      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))[0] || null;
+  }
 
   if (!les) {
-    UI.page({ active:'lesson', head:{ title:'Занятие' },
-      body:`<div class="card">${UI.empty('Занятие не назначено',
-        'Как только репетитор поставит занятие, оно появится здесь.')}</div>` });
+    UI.page({ session:ses, active:'lesson', head:{ title:'Занятие' },
+      body:`<div class="card">${UI.empty('Занятий пока нет', asTutor
+        ? 'Создайте занятие на странице <a href="tutor.html">Сегодня</a> — там же список учеников.'
+        : 'Занятие появится, когда репетитор его назначит.')}</div>` });
     return;
   }
 
+  const grp = les.groupId ? C.group(les.groupId) : null;
+  const roster = C.studentsOfLesson(les);
+  const watchSid = asTutor ? (UI.qs('student') || roster[0] || null) : ses.studentId;
+  const watchUser = watchSid ? C.studentUser(watchSid) : null;
   const live = C.lessonIsLive(les);
   const call = (les.links || []).find(l => l.type === 'call');
+  const subj = C.subject(les.subjectId);
 
   /* ── шапка ──────────────────────────────────────────────────── */
   function bannerHTML() {
     return `<section class="banner">
       <div>
-        <div class="lbl">${live ? '● занятие идёт' : les.status === 'done' ? 'занятие завершено' : 'занятие запланировано'}</div>
+        <div class="lbl">${live ? '● занятие идёт'
+          : les.status === 'done' ? 'занятие проведено' : 'занятие запланировано'}</div>
         <div class="val">${C.relDay(les.startsAt) || C.fmtDate(les.startsAt)} в ${C.fmtTime(les.startsAt)} · ${les.durationMin} мин</div>
-        <div class="meta">${UI.esc(C.subject(les.subjectId).name)} ·
+        <div class="meta">${UI.esc(subj.name)} ·
           ${grp ? 'группа «' + UI.esc(grp.title) + '», ' + roster.length + ' ' +
               C.plural(roster.length,'участник','участника','участников')
-            : asTutor ? 'ученик: ' + UI.esc(stUser.name)
-            : 'репетитор: ' + UI.esc(((C.tutorOf(S, les.subjectId) || {}).user || {}).name || '—')}</div>
+            : asTutor ? 'ученик: ' + UI.esc(watchUser ? watchUser.name : '—')
+            : 'репетитор: ' + UI.esc(((C.tutorOf(ses.studentId, les.subjectId) || {}).user || {}).name || '—')}</div>
       </div>
       <div class="acts">
-        ${call ? `<a class="btn white" href="${call.url}" target="_blank" rel="noopener">Подключиться</a>` : ''}
-        ${asTutor ? `<button class="btn ghost" id="finish"
-            style="color:#fff;border-color:rgba(255,255,255,.6)">Завершить занятие</button>` : ''}
+        ${call ? `<a class="btn white" href="${UI.esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>`
+               : asTutor ? '' : '<span class="muted small" style="color:rgba(255,255,255,.8)">ссылки на созвон пока нет</span>'}
+        ${asTutor && les.status !== 'done'
+          ? `<button class="btn ghost" id="finish" style="color:#fff;border-color:rgba(255,255,255,.6)">Завершить</button>` : ''}
       </div>
     </section>`;
   }
@@ -58,11 +72,49 @@
     return `<div class="card">
       <div class="head"><h2>Ссылки занятия</h2>
         ${asTutor ? '<a href="#" id="addlink">добавить</a>' : ''}</div>
-      ${list.length ? `<div class="links">${list.map(UI.linkRow).join('')}</div>`
-        : UI.empty('Ссылок нет', 'Созвон и доска добавляются репетитором.')}
-      <div class="note n-grey" style="margin-top:12px">
-        Тип ссылки, а не отдельные поля: созвон, доска, материал.
+      ${list.length ? `<div class="links">${list.map((l, i) => UI.linkRow(l, i, asTutor)).join('')}</div>`
+        : UI.empty('Ссылок нет', asTutor
+            ? 'Добавьте созвон и доску — ученик увидит их сразу.'
+            : 'Репетитор добавит ссылки к началу занятия.')}
+      <div id="linkform"></div>
+      ${asTutor ? `<div class="note n-grey" style="margin-top:12px">
+        Тип, а не отдельные поля: созвон, доска, материал. Первая ссылка типа
+        «созвон» становится кнопкой «Подключиться» у ученика.</div>` : ''}
+    </div>`;
+  }
+
+  function linkFormHTML() {
+    return `<div class="card" style="margin-top:12px;background:var(--bg)">
+      <div class="head"><h2>Новая ссылка</h2><a href="#" id="closelink">закрыть</a></div>
+      <div class="fld-row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label style="width:150px">
+          <div class="muted small" style="margin-bottom:5px">Тип</div>
+          <select id="l-type" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);
+            border-radius:10px;background:var(--panel);color:var(--text);font:inherit">
+            <option value="call">созвон</option>
+            <option value="board">доска</option>
+            <option value="material">материал</option>
+          </select></label>
+        <label style="flex:2;min-width:220px">
+          <div class="muted small" style="margin-bottom:5px">Ссылка</div>
+          <input id="l-url" placeholder="https://telemost.yandex.ru/j/…"
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;
+                   background:var(--panel);color:var(--text);font:inherit"></label>
+        <label style="flex:1;min-width:150px">
+          <div class="muted small" style="margin-bottom:5px">Подпись</div>
+          <input id="l-label" placeholder="необязательно"
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;
+                   background:var(--panel);color:var(--text);font:inherit"></label>
+        <button class="btn" id="l-add">Добавить</button>
       </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn sm grey preset" data-t="call" data-u="https://telemost.yandex.ru/j/00000000000000">Телемост</button>
+        <button class="btn sm grey preset" data-t="call" data-u="https://zoom.us/j/0000000000">Zoom</button>
+        <button class="btn sm grey preset" data-t="board" data-u="https://excalidraw.com/#room=token-lesson">Excalidraw</button>
+        <button class="btn sm grey preset" data-t="board" data-u="https://miro.com/app/board/demo/">Miro</button>
+        <span class="muted small" style="align-self:center">подставить пример</span>
+      </div>
+      <div id="l-out"></div>
     </div>`;
   }
 
@@ -70,34 +122,62 @@
   function tasksHTML() {
     const ids = les.taskIds || [];
     if (!ids.length) return `<div class="card">
-      <div class="head"><h2>Задания занятия</h2>${asTutor ? '<a href="#" id="addtask">прикрепить из банка</a>' : ''}</div>
+      <div class="head"><h2>Задания занятия</h2>
+        ${asTutor ? '<a href="#" id="addtask">прикрепить из банка</a>' : ''}</div>
       ${UI.empty('Заданий пока нет', asTutor
         ? 'Прикрепите задачи из банка — ученик увидит их сразу.'
-        : 'Репетитор прикрепит задачи во время занятия.')}</div>`;
+        : 'Репетитор прикрепит задачи во время занятия.')}
+      <div id="picker-slot"></div></div>`;
 
     const rows = ids.map(id => {
       const t = C.task(id);
-      const at = C.attemptFor(watchSid || S, id, { lessonId: les.id }) || {};
+      const at = watchSid ? (C.attemptFor(watchSid, id, { lessonId: les.id }) || {}) : {};
       const state = !at.status || at.status === 'issued' ? { m:'○', c:'var(--muted)', s:'не открыто' }
         : at.status === 'in_progress' ? { m:'◐', c:'var(--brand)', s:'решает · ' + C.fmtDurShort(at.activeSeconds) }
         : at.status === 'submitted' ? { m:'◍', c:'var(--amber)', s:'ждёт проверки' }
         : at.isCorrect ? { m:'●', c:'var(--green)', s:'верно · ' + C.fmtDurShort(at.activeSeconds) }
         : { m:'✕', c:'var(--red)', s:'неверно · ' + C.fmtDurShort(at.activeSeconds) };
-      const href = asTutor ? `#watch-${id}` : `task.html?task=${id}&lesson=${les.id}`;
-      return `<a class="row" href="${href}" ${asTutor ? `data-watch="${id}"` : ''}>
+      const href = asTutor ? '#' : `task.html?task=${id}&lesson=${les.id}`;
+      return `<a class="row" href="${href}" ${asTutor ? 'onclick="return false"' : ''}>
         <span style="color:${state.c};font-size:17px;width:16px;text-align:center">${state.m}</span>
         <span class="grow"><span class="t">№${t ? t.number : '?'} · ${UI.esc(t ? t.title : id)}</span>
-          <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}</span></span>
-        <span class="r">${state.s}</span></a>`;
+          <span class="s">${t ? UI.esc((C.topic(t.topicId)||{}).name || '') : ''}${
+            t && !t.autoCheck ? ' · проверяет репетитор' : ''}</span></span>
+        <span class="r">${state.s}</span>
+        ${asTutor ? `<button class="btn sm grey rm-task" data-id="${id}">убрать</button>` : ''}</a>`;
     }).join('');
 
     return `<div class="card">
       <div class="head"><h2>Задания занятия</h2>
         ${asTutor ? '<a href="#" id="addtask">прикрепить из банка</a>' : ''}</div>
-      <div class="row-list">${rows}</div></div>`;
+      <div class="row-list">${rows}</div>
+      <div id="picker-slot"></div></div>`;
   }
 
-  /* ── панель наблюдения (только репетитор) ───────────────────── */
+  function pickerHTML() {
+    const pool = C.db.tasks.filter(t => t.subjectId === les.subjectId);
+    const nums = [...new Set(pool.map(t => t.number))].sort((a, b) => a - b);
+    return `<div class="card" id="picker" style="margin-top:12px;background:var(--bg)">
+      <div class="head"><h2>Банк задач · ${UI.esc(subj.name)}</h2><a href="#" id="closepick">закрыть</a></div>
+      <div class="filters" style="margin-bottom:12px">
+        <button data-num="all" class="on">Все</button>
+        ${nums.map(n => `<button data-num="${n}">№${n}</button>`).join('')}
+      </div>
+      <div class="row-list" id="pool">${pool.map(t => taskRow(t)).join('')}</div>
+    </div>`;
+  }
+
+  function taskRow(t) {
+    const on = (les.taskIds || []).includes(t.id);
+    return `<a class="row" href="#" data-pick="${t.id}" data-num="${t.number}" onclick="return false">
+      <span class="badge b-blue">№${t.number}</span>
+      <span class="grow"><span class="t">${UI.esc(t.title)}</span>
+        <span class="s">${UI.esc((C.topic(t.topicId)||{}).name||'')} · сложность ${t.difficulty}/3
+          · ${t.autoCheck ? 'автопроверка' : 'ручная проверка'}</span></span>
+      <span class="r">${on ? 'прикреплено' : 'прикрепить'}</span></a>`;
+  }
+
+  /* ── наблюдение ─────────────────────────────────────────────── */
   function rosterHTML() {
     if (!grp) return '';
     return `<div class="card">
@@ -108,42 +188,36 @@
           const a = C.attemptFor(sid, tid, { lessonId: les.id });
           return a && a.isCorrect === true;
         }).length;
-        return `<a href="lesson.html?role=tutor&lesson=${les.id}&student=${sid}"
-          class="${sid === watchSid ? 'cur' : ''}">
+        return `<a href="lesson.html?lesson=${les.id}&student=${sid}" class="${sid === watchSid ? 'cur' : ''}">
           <span class="grow">${UI.esc(u.name)}</span>
           <span class="muted small">${solved} из ${(les.taskIds||[]).length}</span></a>`;
-      }).join('')}</div>
-      <div class="hint" style="margin-top:10px">Экран наблюдения переключается между участниками.</div>
-    </div>`;
+      }).join('')}</div></div>`;
   }
 
   function watchHTML() {
     const ids = les.taskIds || [];
-    const cur = ids.map(id => C.attemptFor(watchSid || S, id, { lessonId: les.id }))
-      .filter(Boolean)
-      .sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
+    const cur = watchSid ? ids.map(id => C.attemptFor(watchSid, id, { lessonId: les.id }))
+      .filter(Boolean).sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0] : null;
     const t = cur ? C.task(cur.taskId) : null;
     return `<div class="card">
       <div class="head">
-        <h2>Экран ученика${grp ? ' · ' + UI.esc(stUser.name.split(' ')[0]) : ''}</h2>
+        <h2>Экран ученика${watchUser ? ' · ' + UI.esc(watchUser.name.split(' ')[0]) : ''}</h2>
         <span class="muted small"><span class="dot ${cur && cur.status === 'in_progress' ? '' : 'off'}"></span>
           обновление раз в 2 с</span>
       </div>
       <div id="watch">
         ${!cur || !t ? UI.empty('Ученик ещё не открыл задание', 'Как только откроет — здесь появится его черновик.')
           : `<div class="hint" style="margin-bottom:10px">Сейчас: №${t.number} · ${UI.esc(t.title)}
-              · ${C.fmtDur(cur.activeSeconds)} · попыток ${cur.tries || 0}</div>
+              · ${C.fmtDur(cur.activeSeconds)} · попыток ${cur.tries || 0}${
+              cur.answer ? ' · ответ: ' + UI.esc(cur.answer) : ''}</div>
              <div class="editor"><pre id="watch-code">${UI.esc(cur.code || '— пусто —')}</pre></div>`}
       </div>
       <div class="note n-blue" style="margin-top:12px">
-        В прототипе снапшот идёт через localStorage между вкладками.
+        Снапшот идёт через localStorage между вкладками этого браузера.
         В бою — WebSocket-комната <code>lesson:${les.id}</code>.
-        Откройте вторую вкладку в роли ученика и начните печатать.
-      </div>
-    </div>`;
+      </div></div>`;
   }
 
-  /* ── заметка ────────────────────────────────────────────────── */
   function noteHTML() {
     const n = les.note;
     return `<div class="card">
@@ -151,30 +225,8 @@
         ${n ? `<span class="badge b-grey">видит: ${
           n.visibility === 'parent' ? 'ученик и родитель' :
           n.visibility === 'student' ? 'только ученик' : 'только репетитор'}</span>` : ''}</div>
-      ${n ? `<p style="font-size:14.5px">${UI.esc(n.text)}</p>
-             <div class="hint" style="margin-top:8px">Разобрано: ${
-               (n.topics||[]).map(id => UI.esc((C.topic(id)||{}).name||'')).join(', ') || '—'}</div>`
+      ${n ? `<p style="font-size:14.5px">${UI.esc(n.text)}</p>`
           : UI.empty('Заметки нет', asTutor ? 'Появится после занятия.' : 'Репетитор добавит после занятия.')}
-    </div>`;
-  }
-
-  /* ── выбор задачи из банка ──────────────────────────────────── */
-  function pickerHTML() {
-    const rows = C.db.tasks.filter(t => t.subjectId === les.subjectId).map(t => `
-      <a class="row" href="#" data-pick="${t.id}">
-        <span class="badge b-blue">№${t.number}</span>
-        <span class="grow"><span class="t">${UI.esc(t.title)}</span>
-          <span class="s">${UI.esc((C.topic(t.topicId)||{}).name||'')} · сложность ${t.difficulty}/3</span></span>
-        <span class="r">${(les.taskIds||[]).includes(t.id) ? 'уже прикреплено' : 'прикрепить'}</span></a>`).join('');
-    return `<div class="card" id="picker" style="margin-top:14px">
-      <div class="head"><h2>Банк задач</h2><a href="#" id="closepick">закрыть</a></div>
-      <div class="row-list">${rows}</div>
-      <div class="note n-grey" style="margin-top:12px">
-        В банке ${C.db.tasks.filter(t => t.subjectId === les.subjectId).length}
-        ${C.plural(C.db.tasks.filter(t => t.subjectId === les.subjectId).length,'задача','задачи','задач')}
-        по предмету «${UI.esc(C.subject(les.subjectId).name)}» —
-        это сид. Импорт наполняет ту же таблицу, экраны меняться не будут.
-      </div>
     </div>`;
   }
 
@@ -183,72 +235,100 @@
        <div class="cols c2w">
          <div class="stack">${watchHTML()}${tasksHTML()}</div>
          <div class="stack">${rosterHTML()}${linksHTML()}${noteHTML()}</div>
-       </div>
-       <div id="picker-slot"></div>`
+       </div>`
     : `${bannerHTML()}
        <div class="cols c2w">
          <div class="stack">${tasksHTML()}${noteHTML()}</div>
          <div class="stack">${linksHTML()}
            <div class="note n-blue">Во время занятия репетитор видит ваш черновик кода —
-             это нормально, так он подсказывает быстрее.</div>
+             так он быстрее подскажет.</div>
          </div>
        </div>`;
 
   UI.page({
-    active:'lesson',
-    head:{ title: asTutor ? 'Занятие · ' + stUser.name.split(' ')[0] : 'Занятие',
-           sub: C.fmtDateFull(les.startsAt) },
+    session: ses,
+    active: 'lesson',
+    head:{ title: asTutor ? 'Ведение занятия' : 'Занятие', sub: C.fmtDateFull(les.startsAt) },
     body,
   });
 
-  /* ── интерактив ─────────────────────────────────────────────── */
+  /* ── ссылки: добавление и удаление ──────────────────────────── */
   if (asTutor) {
-    const slot = document.getElementById('picker-slot');
-    const openPicker = e => {
-      if (e) e.preventDefault();
-      slot.innerHTML = pickerHTML();
-      slot.scrollIntoView({ behavior:'smooth', block:'start' });
-      document.getElementById('closepick').addEventListener('click', ev => {
-        ev.preventDefault(); slot.innerHTML = '';
+    const addLink = document.getElementById('addlink');
+    if (addLink) addLink.addEventListener('click', e => {
+      e.preventDefault();
+      const slot = document.getElementById('linkform');
+      slot.innerHTML = linkFormHTML();
+      document.getElementById('closelink').addEventListener('click', ev => { ev.preventDefault(); slot.innerHTML = ''; });
+      slot.querySelectorAll('.preset').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('l-type').value = b.dataset.t;
+        document.getElementById('l-url').value = b.dataset.u;
+      }));
+      document.getElementById('l-add').addEventListener('click', () => {
+        const res = C.addLessonLink(les.id, {
+          type: document.getElementById('l-type').value,
+          url: document.getElementById('l-url').value,
+          label: document.getElementById('l-label').value,
+        });
+        if (res && res.error) {
+          document.getElementById('l-out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`;
+          return;
+        }
+        location.reload();
       });
-      slot.querySelectorAll('[data-pick]').forEach(a =>
-        a.addEventListener('click', ev => {
-          ev.preventDefault();
-          const id = a.dataset.pick;
-          if (!(les.taskIds || []).includes(id)) {
-            les.taskIds = (les.taskIds || []).concat(id);
-            /* групповое занятие — задача разворачивается на всех участников */
-            (roster.length ? roster : [S]).forEach(sid =>
-              C.ensureAttempt(sid, id, { lessonId: les.id }));
-            DB.save();
-          }
-          location.reload();
-        }));
-    };
-    const add = document.getElementById('addtask');
-    if (add) add.addEventListener('click', openPicker);
+    });
+
+    document.querySelectorAll('.rm-link').forEach(b => b.addEventListener('click', () => {
+      C.removeLessonLink(les.id, +b.dataset.i); location.reload();
+    }));
+
+    /* ── прикрепление задач ─────────────────────────────────── */
+    const addTask = document.getElementById('addtask');
+    if (addTask) addTask.addEventListener('click', e => {
+      e.preventDefault();
+      const slot = document.getElementById('picker-slot');
+      slot.innerHTML = pickerHTML();
+      slot.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      document.getElementById('closepick').addEventListener('click', ev => { ev.preventDefault(); slot.innerHTML = ''; });
+      slot.querySelectorAll('[data-num]').forEach(b => {
+        if (b.tagName !== 'BUTTON') return;
+        b.addEventListener('click', () => {
+          slot.querySelectorAll('.filters button').forEach(x => x.classList.toggle('on', x === b));
+          const n = b.dataset.num;
+          slot.querySelectorAll('#pool .row').forEach(r =>
+            r.style.display = (n === 'all' || r.dataset.num === n) ? '' : 'none');
+        });
+      });
+      slot.querySelectorAll('[data-pick]').forEach(a => a.addEventListener('click', () => {
+        C.attachTask(les.id, a.dataset.pick);
+        location.reload();
+      }));
+    });
+
+    document.querySelectorAll('.rm-task').forEach(b => b.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      C.detachTask(les.id, b.dataset.id); location.reload();
+    }));
 
     const fin = document.getElementById('finish');
     if (fin) fin.addEventListener('click', () => {
-      alert('В прототипе статус занятия не меняется: это действие пишет Lesson.status = «проведено» ' +
-            'и списывает занятие с абонемента.');
+      if (!confirm('Отметить занятие проведённым? Спишется одно занятие с абонемента ученика.')) return;
+      C.setLessonStatus(les.id, 'done'); location.reload();
     });
 
-    /* снапшот экрана ученика */
+    /* ── снапшот экрана ученика ─────────────────────────────── */
     setInterval(() => {
-      const ids = les.taskIds || [];
+      if (!watchSid) return;
       let raw = null;
       try { raw = JSON.parse(localStorage.getItem(DB.LS_KEY) || 'null'); } catch (e) {}
       if (!raw || !raw.attempts) return;
-      const mine = raw.attempts.filter(a => {
-        const full = C.attempt(a.id);
-        return full && full.lessonId === les.id && ids.includes(full.taskId)
-          && full.studentId === (watchSid || S);
-      });
+      const ids = les.taskIds || [];
+      const mine = raw.attempts.filter(a =>
+        a.lessonId === les.id && a.studentId === watchSid && ids.includes(a.taskId));
       if (!mine.length) return;
       const top = mine.sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
       const pre = document.getElementById('watch-code');
-      if (pre) pre.textContent = top.code || '— пусто —';
+      if (pre && pre.textContent !== (top.code || '— пусто —')) pre.textContent = top.code || '— пусто —';
     }, 2000);
   }
 })();

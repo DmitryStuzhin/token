@@ -3,21 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Группа — arcs.studio</title>
+<title>Группа — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
-  const C = Core, T = UI.TUTOR;
+  const ses = Auth.require('tutor');
+  if (!ses) return;
+  const C = Core;
+  const T = ses.tutorId;
   const gid = UI.qs('group');
   const gs = gid ? C.groupStats(gid) : null;
 
   if (!gs) {
-    UI.page({ role:'tutor', active:'groups', head:{ title:'Группа не найдена' },
+    UI.page({
+    session: ses, active:'groups', head:{ title:'Группа не найдена' },
       body:`<div class="card">${UI.empty('Нет такой группы',
         '<a href="tutor.html#groups">к списку групп</a>')}</div>` });
     return;
@@ -131,7 +136,7 @@
   }
 
   UI.page({
-    role:'tutor',
+    session: ses,
     active:'groups',
     head:{ title: g.title,
       sub:`${UI.esc(gs.subject.name)} · ${g.level} · ${g.schedule}`,

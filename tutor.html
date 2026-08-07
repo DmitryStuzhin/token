@@ -3,16 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Кабинет репетитора — arcs.studio</title>
+<title>Кабинет репетитора — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
-  const C = Core, T = UI.TUTOR;
+  const ses = Auth.require('tutor');
+  if (!ses) return;
+  const C = Core;
+  const T = ses.tutorId;
   const tp = C.tutorProfile(T);
   const me = C.user(tp.userId);
   const today = C.tutorToday(T);
@@ -34,9 +38,32 @@
       `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
   }
 
+  function onboardHTML() {
+    if (sids.length) return '';
+    return `<section class="card" style="border:1.5px solid var(--brand)">
+      <div class="head"><div><h2>Начните с приглашения</h2>
+        <div class="hint">Учеников пока нет — они появляются сами, по ссылке</div></div></div>
+      <div class="row-list">
+        <div class="row"><span class="badge b-blue">1</span>
+          <span class="grow"><span class="t">Выпустите ссылку-приглашение</span>
+            <span class="s">Раздел «Приглашения» ниже — выберите предмет и нажмите «Создать»</span></span></div>
+        <div class="row"><span class="badge b-blue">2</span>
+          <span class="grow"><span class="t">Отправьте ссылку ученику</span>
+            <span class="s">Он открывает её, видит вас и предмет, нажимает «Присоединиться»</span></span></div>
+        <div class="row"><span class="badge b-blue">3</span>
+          <span class="grow"><span class="t">Назначьте занятие</span>
+            <span class="s">Дальше — ссылки на созвон и доску, задания из банка, наблюдение за решением</span></span></div>
+      </div>
+      <a class="btn" style="margin-top:14px" href="#invites">К приглашениям</a>
+    </section>`;
+  }
+
   function todayHTML() {
     if (!today.length) return `<section class="card">
-      <div class="head"><h2>Сегодня</h2></div>${UI.empty('Занятий сегодня нет','')}</section>`;
+      <div class="head"><h2>Сегодня</h2>
+        ${sids.length ? '<button class="btn sm" id="newlesson">Назначить занятие</button>' : ''}</div>
+      ${UI.empty('Занятий сегодня нет', sids.length ? 'Назначьте занятие ученику или группе.' : '')}
+      <div id="lessonform"></div></section>`;
     const rows = today.map(l => {
       const live = C.lessonIsLive(l);
       const call = (l.links || []).find(x => x.type === 'call');
@@ -68,8 +95,11 @@
           <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}&student=${sid}">Вести</a></span></div>`;
     }).join('');
     return `<section class="card">
-      <div class="head"><h2>Сегодня</h2><span class="muted small">${C.fmtDateFull(Date.now())}</span></div>
-      <div class="row-list">${rows}</div></section>`;
+      <div class="head"><h2>Сегодня</h2>
+        <span class="muted small">${C.fmtDateFull(Date.now())}</span>
+        <button class="btn sm" id="newlesson">Назначить занятие</button></div>
+      <div class="row-list">${rows}</div>
+      <div id="lessonform"></div></section>`;
   }
 
   function queueHTML() {
@@ -182,13 +212,13 @@
   }
 
   UI.page({
-    role:'tutor',
+    session: ses,
     active:'today',
     head:{ title:`Здравствуйте, ${me.name.split(' ')[0]}!`,
       sub:`${sids.length} ${C.plural(sids.length,'ученик','ученика','учеников')} · ${groups.length}
         ${C.plural(groups.length,'группа','группы','групп')} · ${tp.subjects.map(id => C.subject(id).name).join(', ')}`,
       actions:`<a class="btn ghost" href="tutor-check.html">Очередь проверки</a>` },
-    body:`${kpiHTML()}
+    body:`${onboardHTML()}${kpiHTML()}
       <div class="cols c2">${todayHTML()}${queueHTML()}</div>
       ${groupsHTML()}
       ${studentsHTML()}
@@ -248,11 +278,62 @@
     });
   });
 
+  /* ── назначение занятия ─────────────────────────────────────── */
+  const nl = document.getElementById('newlesson');
+  if (nl) nl.addEventListener('click', () => {
+    const slot = document.getElementById('lessonform');
+    const targets = [];
+    C.db.enrollments.filter(e => e.tutorId === T && e.status === 'active').forEach(e =>
+      targets.push({ v:'e:' + e.id, t: C.studentUser(e.studentId).name + ' · ' + C.subject(e.subjectId).name }));
+    groups.forEach(g => targets.push({ v:'g:' + g.id, t:'Группа «' + g.title + '» · ' + C.subject(g.subjectId).name }));
+    if (!targets.length) { alert('Сначала пригласите ученика или создайте группу.'); return; }
+    const start = new Date(Date.now() + 3600000); start.setMinutes(0, 0, 0);
+    slot.innerHTML = `<div class="card" style="margin-top:12px;background:var(--bg)">
+      <div class="head"><h2>Новое занятие</h2><a href="#" id="closeles">закрыть</a></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label style="flex:2;min-width:220px"><div class="muted small" style="margin-bottom:5px">Кому</div>
+          <select id="n-target" style="width:100%;padding:10px 12px;border:1.5px solid var(--line);
+            border-radius:10px;background:var(--panel);color:var(--text);font:inherit">
+            ${targets.map(x => `<option value="${x.v}">${UI.esc(x.t)}</option>`).join('')}</select></label>
+        <label style="flex:1;min-width:190px"><div class="muted small" style="margin-bottom:5px">Начало</div>
+          <input id="n-start" type="datetime-local" value="${UI.dtLocal(start)}"
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;
+                   background:var(--panel);color:var(--text);font:inherit"></label>
+        <label style="width:120px"><div class="muted small" style="margin-bottom:5px">Минут</div>
+          <input id="n-dur" type="number" min="15" step="15" value="90"
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;
+                   background:var(--panel);color:var(--text);font:inherit"></label>
+        <button class="btn" id="n-make">Назначить</button>
+      </div></div>`;
+    document.getElementById('closeles').addEventListener('click', e => { e.preventDefault(); slot.innerHTML = ''; });
+    document.getElementById('n-make').addEventListener('click', () => {
+      const [kind, id] = document.getElementById('n-target').value.split(':');
+      const when = document.getElementById('n-start').value;
+      if (!when) { alert('Укажите дату и время'); return; }
+      const opts = { tutorId:T, startsAt:new Date(when).toISOString(),
+                     durationMin:+document.getElementById('n-dur').value || 60 };
+      if (kind === 'e') {
+        const e = C.db.enrollments.find(x => x.id === id);
+        Object.assign(opts, { enrollmentId:e.id, subjectId:e.subjectId });
+      } else {
+        const g = C.group(id);
+        Object.assign(opts, { groupId:g.id, subjectId:g.subjectId });
+      }
+      const lesson = C.createLesson(opts);
+      location.href = 'lesson.html?lesson=' + lesson.id;
+    });
+  });
+
+  /* ── создание группы ────────────────────────────────────────── */
   const ng = document.getElementById('newgroup');
-  if (ng) ng.addEventListener('click', () =>
-    alert('Форма создания группы в прототипе не собрана.\n\n' +
-          'Заводится запись Group: репетитор, предмет, название, уровень, расписание, вместимость. ' +
-          'Дальше к ней выпускается ссылка-приглашение.'));
+  if (ng) ng.addEventListener('click', () => {
+    const title = prompt('Название группы', 'ЕГЭ ' + C.subject(tp.subjects[0]).name.toLowerCase() + ' · вечерняя');
+    if (!title) return;
+    const schedule = prompt('Расписание (текстом)', 'вт, чт · 19:00') || '';
+    const capacity = +prompt('Сколько мест?', '8') || 8;
+    const g = C.createGroup({ tutorId:T, subjectId:tp.subjects[0], title, schedule, capacity });
+    location.href = 'group.html?group=' + g.id;
+  });
 
   if (location.hash) {
     const el = document.querySelector(location.hash);

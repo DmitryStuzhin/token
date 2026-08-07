@@ -3,16 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Профиль — arcs.studio</title>
+<title>Профиль — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
-  const C = Core, S = UI.STUDENT;
+  const ses = Auth.require('student');
+  if (!ses) return;
+  const C = Core;
+  const S = ses.studentId;
   const me = C.studentUser(S);
   const prof = C.student(S);
   const subjects = C.subjectsOf(S);
@@ -110,6 +114,7 @@
     </div>`;
 
   UI.page({
+    session: ses,
     active:'account',
     head:{
       title:'Профиль',

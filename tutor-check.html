@@ -3,22 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Проверка работ — arcs.studio</title>
+<title>Проверка работ — Token</title>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
 <script src="assets/db.js"></script>
 <script src="assets/core.js"></script>
+<script src="assets/auth.js"></script>
 <script src="assets/ui.js"></script>
 <script>
 (function () {
-  const C = Core, T = UI.TUTOR;
+  const ses = Auth.require('tutor');
+  if (!ses) return;
+  const C = Core;
+  const T = ses.tutorId;
   const queue = C.reviewQueue(T);
   const focusId = UI.qs('attempt');
   const cur = focusId ? queue.find(q => q.attempt.id === focusId) : queue[0];
 
   if (!queue.length) {
-    UI.page({ role:'tutor', active:'check', head:{ title:'Проверка работ', sub:'Очередь пуста' },
+    UI.page({
+    session: ses, active:'check', head:{ title:'Проверка работ', sub:'Очередь пуста' },
       body:`<div class="card">${UI.empty('Всё проверено',
         'Сюда попадают задания без автопроверки — например №27, где нужен сам код.')}</div>` });
     return;
@@ -99,7 +104,7 @@
       </div>
     </div>`;
 
-  UI.page({ active:'check',
+  UI.page({ session: ses, active:'check',
     head:{ title:'Проверка работ', sub:`${queue.length} ${C.plural(queue.length,'работа','работы','работ')} в очереди` },
     body });
 
