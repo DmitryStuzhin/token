@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Приглашение — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require();
@@ -197,11 +199,12 @@
   if (cp) cp.addEventListener('click', () => UI.copy(C.inviteUrl(inv.code), cp));
 
   const acc = document.getElementById('accept');
-  if (acc) acc.addEventListener('click', () => {
-    const res = C.acceptInvite(code, S);
+  if (acc) acc.addEventListener('click', async () => {
     const out = document.getElementById('out');
-    if (!res.ok) { out.innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`; return; }
     acc.disabled = true;
+    let res;
+    try { res = await Api.acceptInvite(code); }
+    catch (e) { acc.disabled = false; out.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`; return; }
     const t = res.target;
     out.innerHTML = `<div class="verdict v-ok">
       Готово. ${t.kind === 'group' ? 'Вы в группе «' + UI.esc(t.group.title) + '»'

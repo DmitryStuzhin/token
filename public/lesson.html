@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Занятие — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require();
@@ -202,8 +204,8 @@
     return `<div class="card">
       <div class="head">
         <h2>Экран ученика${watchUser ? ' · ' + UI.esc(watchUser.name.split(' ')[0]) : ''}</h2>
-        <span class="muted small"><span class="dot ${cur && cur.status === 'in_progress' ? '' : 'off'}"></span>
-          обновление раз в 2 с</span>
+        <span class="muted small" id="watch-head"><span class="dot ${cur && cur.status === 'in_progress' ? '' : 'off'}"></span>
+          живой канал</span>
       </div>
       <div id="watch">
         ${!cur || !t ? UI.empty('Ученик ещё не открыл задание', 'Как только откроет — здесь появится его черновик.')
@@ -213,8 +215,8 @@
              <div class="editor"><pre id="watch-code">${UI.esc(cur.code || '— пусто —')}</pre></div>`}
       </div>
       <div class="note n-blue" style="margin-top:12px">
-        Снапшот идёт через localStorage между вкладками этого браузера.
-        В бою — WebSocket-комната <code>lesson:${les.id}</code>.
+        Черновик приходит по WebSocket из комнаты <code>lesson:${les.id}</code>.
+        Соединение авторизовано той же сессией — посторонний в комнату не попадёт.
       </div></div>`;
   }
 
@@ -241,9 +243,33 @@
          <div class="stack">${tasksHTML()}${noteHTML()}</div>
          <div class="stack">${linksHTML()}
            <div class="note n-blue">Во время занятия репетитор видит ваш черновик кода —
-             так он быстрее подскажет.</div>
+             так он быстрее подскажет. Черновик и время уходят на сервер сами.</div>
          </div>
        </div>`;
+
+  /* соединение с комнатой занятия: одно на обе роли */
+  function connectLive(wants, onSnapshot) {
+    let ws = null, timer = null, alive = false;
+    const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+      location.host + '/live?lesson=' + encodeURIComponent(les.id);
+    function open() {
+      try { ws = new WebSocket(url); } catch (e) { return retry(); }
+      ws.onopen = () => { alive = true; };
+      ws.onmessage = ev => {
+        let msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type === 'snapshot' && onSnapshot && wants(msg.studentId)) onSnapshot(msg);
+      };
+      ws.onclose = () => { alive = false; retry(); };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    }
+    function retry() {
+      clearTimeout(timer);
+      timer = setTimeout(open, 3000);      /* сервер перезапустили — вернёмся сами */
+    }
+    open();
+    return { send: m => { if (alive) try { ws.send(JSON.stringify(m)); } catch (e) {} } };
+  }
 
   UI.page({
     session: ses,
@@ -264,22 +290,23 @@
         document.getElementById('l-type').value = b.dataset.t;
         document.getElementById('l-url').value = b.dataset.u;
       }));
-      document.getElementById('l-add').addEventListener('click', () => {
-        const res = C.addLessonLink(les.id, {
-          type: document.getElementById('l-type').value,
-          url: document.getElementById('l-url').value,
-          label: document.getElementById('l-label').value,
-        });
-        if (res && res.error) {
-          document.getElementById('l-out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`;
-          return;
+      document.getElementById('l-add').addEventListener('click', async () => {
+        try {
+          await Api.addLink(les.id, {
+            type: document.getElementById('l-type').value,
+            url: document.getElementById('l-url').value,
+            label: document.getElementById('l-label').value,
+          });
+          location.reload();
+        } catch (e) {
+          document.getElementById('l-out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
         }
-        location.reload();
       });
     });
 
-    document.querySelectorAll('.rm-link').forEach(b => b.addEventListener('click', () => {
-      C.removeLessonLink(les.id, +b.dataset.i); location.reload();
+    document.querySelectorAll('.rm-link').forEach(b => b.addEventListener('click', async () => {
+      try { await Api.removeLink(les.id, +b.dataset.i); location.reload(); }
+      catch (e) { alert(e.message); }
     }));
 
     /* ── прикрепление задач ─────────────────────────────────── */
@@ -299,37 +326,35 @@
             r.style.display = (n === 'all' || r.dataset.num === n) ? '' : 'none');
         });
       });
-      slot.querySelectorAll('[data-pick]').forEach(a => a.addEventListener('click', () => {
-        C.attachTask(les.id, a.dataset.pick);
-        location.reload();
+      slot.querySelectorAll('[data-pick]').forEach(a => a.addEventListener('click', async () => {
+        try { await Api.attachTask(les.id, a.dataset.pick); location.reload(); }
+        catch (e) { alert(e.message); }
       }));
     });
 
-    document.querySelectorAll('.rm-task').forEach(b => b.addEventListener('click', e => {
+    document.querySelectorAll('.rm-task').forEach(b => b.addEventListener('click', async e => {
       e.preventDefault(); e.stopPropagation();
-      C.detachTask(les.id, b.dataset.id); location.reload();
+      try { await Api.detachTask(les.id, b.dataset.id); location.reload(); }
+      catch (err) { alert(err.message); }
     }));
 
     const fin = document.getElementById('finish');
-    if (fin) fin.addEventListener('click', () => {
+    if (fin) fin.addEventListener('click', async () => {
       if (!confirm('Отметить занятие проведённым? Спишется одно занятие с абонемента ученика.')) return;
-      C.setLessonStatus(les.id, 'done'); location.reload();
+      try { await Api.setLessonStatus(les.id, 'done'); location.reload(); }
+      catch (e) { alert(e.message); }
     });
 
-    /* ── снапшот экрана ученика ─────────────────────────────── */
-    setInterval(() => {
-      if (!watchSid) return;
-      let raw = null;
-      try { raw = JSON.parse(localStorage.getItem(DB.LS_KEY) || 'null'); } catch (e) {}
-      if (!raw || !raw.attempts) return;
-      const ids = les.taskIds || [];
-      const mine = raw.attempts.filter(a =>
-        a.lessonId === les.id && a.studentId === watchSid && ids.includes(a.taskId));
-      if (!mine.length) return;
-      const top = mine.sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
+    /* ── живой просмотр экрана ученика по WebSocket ─────────── */
+    connectLive(sid => sid === watchSid, payload => {
+      const top = (payload.attempts || [])
+        .slice().sort((a, b) => (b.activeSeconds || 0) - (a.activeSeconds || 0))[0];
+      if (!top) return;
       const pre = document.getElementById('watch-code');
       if (pre && pre.textContent !== (top.code || '— пусто —')) pre.textContent = top.code || '— пусто —';
-    }, 2000);
+      const dot = document.querySelector('#watch-head .dot');
+      if (dot) dot.classList.toggle('off', top.status !== 'in_progress');
+    });
   }
 })();
 </script>

@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Решение задачи — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require('student');
@@ -30,7 +32,13 @@
   }
 
   const scope = asgId ? { assignmentId: asgId } : lesId ? { lessonId: lesId } : {};
-  const a = C.ensureAttempt(S, taskId, scope);
+  const a = C.attemptFor(S, taskId, scope);
+  if (!a) {
+    UI.page({ session: ses, active:'hw', head:{ title:'Задача недоступна' },
+      body:`<div class="card">${UI.empty('Эта задача вам не выдана',
+        'Задачи появляются, когда репетитор прикрепляет их к занятию или домашнему заданию.')}</div>` });
+    return;
+  }
   const asg = asgId ? C.assignment(asgId) : null;
   const les = lesId ? C.lesson(lesId) : null;
   const siblings = asg ? asg.taskIds : les ? (les.taskIds || []) : [taskId];
@@ -44,7 +52,8 @@
       Отправлено репетитору ${C.fmtDateTime(a.submittedAt)}. Проверка вручную — придёт оценка и комментарий.</div>`;
     if (a.status === 'checked') return a.isCorrect
       ? `<div class="verdict v-ok">Верно${a.tries > 1 ? ` — с ${a.tries}-й попытки` : ' с первой попытки'}. Ответ: ${UI.esc(a.answer)}</div>`
-      : `<div class="verdict v-no">Неверно. Правильный ответ: ${UI.esc(t.answer)}</div>`;
+      : `<div class="verdict v-no">Проверено репетитором: не зачтено${
+           a.reviewComment ? '. ' + UI.esc(a.reviewComment) : ''}</div>`;
     return '';
   }
 
@@ -156,9 +165,7 @@
       timeV.textContent = C.fmtDur(accrued);
       if (sincePersist >= 15) {                       /* heartbeat на сервер */
         sincePersist = 0;
-        C.saveAttempt(a.id, { activeSeconds: accrued,
-          status: a.status === 'issued' ? 'in_progress' : a.status,
-          startedAt: a.startedAt || new Date().toISOString() });
+        Api.progress(a.id, code ? code.value : '', accrued).catch(() => {});
       }
     }, 1000);
   } else {
@@ -172,49 +179,54 @@
   if (code && !locked) {
     code.addEventListener('input', () => {
       clearTimeout(codeTimer);
-      codeTimer = setTimeout(() => C.saveAttempt(a.id, { code: code.value }), 600);
+      /* черновик уходит на сервер — оттуда его видит репетитор */
+      codeTimer = setTimeout(() => Api.progress(a.id, code.value, accrued).catch(() => {}), 600);
     });
   }
 
   /* ── проверка ───────────────────────────────────────────────── */
   const btn = document.getElementById('check');
-  if (btn) btn.addEventListener('click', () => {
-    const val = document.getElementById('answer').value;
+  if (btn) btn.addEventListener('click', async () => {
+    const input = document.getElementById('answer');
+    const val = input.value;
     if (!val.trim()) return;
-    const ok = C.checkAnswer(t, val);
-    const tries = (a.tries || 0) + 1;
-    C.saveAttempt(a.id, {
-      answer: val, tries, isCorrect: ok,
-      firstTryCorrect: ok && tries === 1,
-      activeSeconds: accrued,
-      status: ok ? 'checked' : a.status === 'issued' ? 'in_progress' : a.status,
-      startedAt: a.startedAt || new Date().toISOString(),
-      submittedAt: ok ? new Date().toISOString() : a.submittedAt,
-    });
-    document.getElementById('tries-v').textContent = tries;
-    document.getElementById('verdict').innerHTML = ok
-      ? `<div class="verdict v-ok">Верно${tries > 1 ? ` — с ${tries}-й попытки` : ' с первой попытки'}.
-         Задача ушла в статистику.</div>`
-      : `<div class="verdict v-no">Неверно. Попробуйте ещё раз — попытка ${tries}.</div>`;
-    if (ok) {
-      document.getElementById('check').disabled = true;
-      document.getElementById('answer').disabled = true;
-      document.getElementById('status-v').textContent = 'проверено';
-      code.readOnly = true;
+    btn.disabled = true;
+    const verdict = document.getElementById('verdict');
+    try {
+      /* сверка — на сервере: эталонного ответа в браузере нет */
+      const res = await Api.answer(a.id, val, accrued);
+      document.getElementById('tries-v').textContent = res.tries;
+      verdict.innerHTML = res.correct
+        ? `<div class="verdict v-ok">Верно${res.tries > 1 ? ` — с ${res.tries}-й попытки` : ' с первой попытки'}.
+           Задача ушла в статистику.</div>`
+        : `<div class="verdict v-no">Неверно. Попробуйте ещё раз — попытка ${res.tries}.</div>`;
+      if (res.correct) {
+        input.disabled = true;
+        document.getElementById('status-v').textContent = 'проверено';
+        if (code) code.readOnly = true;
+      } else {
+        btn.disabled = false;
+        input.select();
+      }
+    } catch (e) {
+      btn.disabled = false;
+      verdict.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
     }
   });
 
   const send = document.getElementById('send');
-  if (send) send.addEventListener('click', () => {
-    C.saveAttempt(a.id, {
-      code: code.value, activeSeconds: accrued, status:'submitted',
-      startedAt: a.startedAt || new Date().toISOString(),
-      submittedAt: new Date().toISOString(),
-    });
-    send.disabled = true; code.readOnly = true;
-    document.getElementById('status-v').textContent = 'на проверке';
-    document.getElementById('verdict').innerHTML =
-      `<div class="verdict v-wait">Отправлено репетитору. Ждём оценку и комментарий.</div>`;
+  if (send) send.addEventListener('click', async () => {
+    send.disabled = true;
+    try {
+      await Api.submit(a.id, code ? code.value : '', accrued);
+      if (code) code.readOnly = true;
+      document.getElementById('status-v').textContent = 'на проверке';
+      document.getElementById('verdict').innerHTML =
+        `<div class="verdict v-wait">Отправлено репетитору. Ждём оценку и комментарий.</div>`;
+    } catch (e) {
+      send.disabled = false;
+      document.getElementById('verdict').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+    }
   });
 })();
 </script>

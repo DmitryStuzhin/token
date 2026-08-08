@@ -1,4 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════════
+   АГРЕГАТЫ И ВЫБОРКИ — общий код сервера и клиента
+
+   createCore(state) возвращает набор чистых выборок над снимком данных.
+   Сервер собирает снимок из БД, клиент получает его же по сети — логика
+   одна, расхождений между экраном и API быть не может.
+
+   Мутаций здесь нет: изменять данные вправе только сервер.
+   ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
    АГРЕГАТЫ И ВЫБОРКИ
 
    Всё, что показывают экраны, считается здесь из таблиц DB.
@@ -11,8 +20,7 @@
    Почти все выборки принимают необязательный subjectId: без него —
    по всем предметам ученика, с ним — по одному.
    ═══════════════════════════════════════════════════════════════════ */
-window.Core = (function () {
-  const db = DB.load();
+function createCore(db) {
   const DAY = 86400000;
 
   /* ── справочные выборки ──────────────────────────────────────── */
@@ -484,208 +492,11 @@ window.Core = (function () {
     return false;
   }
 
-  function acceptInvite(code, sid) {
-    const inv = inviteByCode(code);
-    const st = inviteState(inv);
-    if (!st.ok) return { ok:false, error: st.label };
-    if (inviteAlreadyJoined(inv, sid)) return { ok:false, error:'Вы уже присоединены по этой ссылке' };
-
-    if (inv.kind === 'enrollment') {
-      db.enrollments.push({
-        id: 'e-' + sid + '-' + inv.subjectId + '-' + Date.now().toString(36),
-        studentId: sid, tutorId: inv.tutorId, subjectId: inv.subjectId,
-        status: 'active', startedAt: new Date().toISOString().slice(0, 10),
-        source: 'invite-accepted', inviteId: inv.id,
-      });
-    } else if (inv.kind === 'group') {
-      db.groupMembers.push({
-        groupId: inv.groupId, studentId: sid,
-        joinedAt: new Date().toISOString().slice(0, 10),
-        status: 'active', source: 'invite-accepted', inviteId: inv.id,
-      });
-      /* групповые задания разворачиваются на нового участника */
-      db.assignments.filter(a => a.groupId === inv.groupId).forEach(a => {
-        a.taskIds.forEach(taskId => ensureAttempt(sid, taskId, { assignmentId: a.id }));
-      });
-    } else if (inv.kind === 'guardian') {
-      return { ok:false, error:'Ссылку для родителя принимает родитель, а не ученик' };
-    }
-
-    inv.usedCount += 1;
-    if (inv.maxUses != null && inv.usedCount >= inv.maxUses) inv.status = 'used_up';
-    DB.save();
-    return { ok:true, invite: inv, target: inviteTarget(inv) };
-  }
-
-  function createInvite(opts) {
-    const rnd = () => Math.random().toString(36).slice(2, 6).toUpperCase();
-    const inv = {
-      id: 'inv-' + Date.now().toString(36),
-      code: (opts.prefix || 'NEW') + '-' + rnd(),
-      kind: opts.kind || 'enrollment',
-      tutorId: opts.tutorId || null, subjectId: opts.subjectId || null,
-      groupId: opts.groupId || null, studentId: opts.studentId || null,
-      createdBy: opts.createdBy || null,
-      createdAt: new Date().toISOString().slice(0, 10),
-      expiresAt: opts.expiresAt || null,
-      maxUses: opts.maxUses == null ? null : opts.maxUses,
-      usedCount: 0, status: 'active', note: opts.note || '',
-    };
-    db.invites.push(inv);
-    DB.save();
-    return inv;
-  }
-
-  function revokeInvite(id) {
-    const inv = byId(db.invites, id);
-    if (inv) { inv.status = 'revoked'; DB.save(); }
-    return inv;
-  }
-
   const invitesOfTutor = tpId => db.invites.filter(i => i.tutorId === tpId);
   const inviteUrl = code => {
-    const base = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '');
-    return base + 'invite.html?code=' + encodeURIComponent(code);
+    const origin = (typeof location !== 'undefined' && location.origin) || '';
+    return origin + '/invite.html?code=' + encodeURIComponent(code);
   };
-
-  /* ── занятия: создание и наполнение репетитором ──────────────── */
-  function createLesson(opts) {
-    const l = {
-      id: 'l-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      subjectId: opts.subjectId,
-      tutorId: opts.tutorId,
-      enrollmentId: opts.enrollmentId || null,
-      groupId: opts.groupId || null,
-      startsAt: opts.startsAt,
-      durationMin: +opts.durationMin || 60,
-      status: 'planned',
-      links: [], taskIds: [],
-    };
-    db.lessons.push(l); DB.save();
-    return l;
-  }
-
-  function addLessonLink(lessonId, link) {
-    const l = lesson(lessonId); if (!l) return null;
-    const url = String(link.url || '').trim();
-    if (!url) return { error: 'Пустая ссылка' };
-    if (!/^https?:\/\//i.test(url)) return { error: 'Ссылка должна начинаться с http:// или https://' };
-    l.links = (l.links || []).concat({
-      type: link.type || 'material',
-      label: String(link.label || '').trim() || defaultLabel(link.type, url),
-      url,
-    });
-    DB.save();
-    return { ok: true, link: l.links[l.links.length - 1] };
-  }
-
-  function defaultLabel(type, url) {
-    const host = (url.match(/^https?:\/\/([^/]+)/i) || [, ''])[1].replace(/^www\./, '');
-    return ({ call:'Созвон', board:'Доска', material:'Материал' }[type] || 'Ссылка') + (host ? ' · ' + host : '');
-  }
-
-  function removeLessonLink(lessonId, index) {
-    const l = lesson(lessonId); if (!l) return;
-    l.links.splice(index, 1); DB.save();
-  }
-
-  /* задача с занятия сразу разворачивается в попытку каждому ученику */
-  function attachTask(lessonId, taskId) {
-    const l = lesson(lessonId); if (!l) return null;
-    if ((l.taskIds || []).includes(taskId)) return { error: 'Задача уже прикреплена' };
-    l.taskIds = (l.taskIds || []).concat(taskId);
-    studentsOfLesson(l).forEach(sid => ensureAttempt(sid, taskId, { lessonId: l.id, groupId: l.groupId }));
-    DB.save();
-    return { ok: true };
-  }
-
-  function detachTask(lessonId, taskId) {
-    const l = lesson(lessonId); if (!l) return;
-    l.taskIds = (l.taskIds || []).filter(x => x !== taskId);
-    /* нетронутые попытки убираем, начатые оставляем — это уже работа ученика */
-    db.attempts = db.attempts.filter(a =>
-      !(a.lessonId === lessonId && a.taskId === taskId && a.status === 'issued'));
-    DB.save();
-  }
-
-  function setLessonStatus(lessonId, status) {
-    const l = lesson(lessonId); if (!l) return;
-    l.status = status;
-    if (status === 'done') {
-      studentsOfLesson(l).forEach(sid => {
-        if (!db.lessonAttendance.some(a => a.lessonId === l.id && a.studentId === sid))
-          db.lessonAttendance.push({ lessonId: l.id, studentId: sid, status: 'present' });
-        const sub = subscriptionOf(sid);
-        if (sub && sub.lessonsLeft > 0) sub.lessonsLeft -= 1;
-      });
-    }
-    DB.save();
-    return l;
-  }
-
-  function createAssignment(opts) {
-    const a = {
-      id: 'a-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      subjectId: opts.subjectId,
-      enrollmentId: opts.enrollmentId || null,
-      groupId: opts.groupId || null,
-      lessonId: opts.lessonId || null,
-      title: opts.title,
-      dueAt: opts.dueAt,
-      taskIds: opts.taskIds || [],
-    };
-    db.assignments.push(a);
-    const students = a.groupId ? membersOf(a.groupId).map(m => m.studentId)
-      : (byId(db.enrollments, a.enrollmentId) ? [byId(db.enrollments, a.enrollmentId).studentId] : []);
-    students.forEach(sid => a.taskIds.forEach(t => ensureAttempt(sid, t, { assignmentId: a.id, groupId: a.groupId })));
-    DB.save();
-    return a;
-  }
-
-  function setGoal(sid, subjectId, targetScore, examDate) {
-    let g = db.goals.find(x => x.studentId === sid && x.subjectId === subjectId);
-    if (!g) { g = { studentId: sid, subjectId }; db.goals.push(g); }
-    g.targetScore = +targetScore; g.examDate = examDate;
-    DB.save();
-    return g;
-  }
-
-  function createGroup(opts) {
-    const g = {
-      id: 'gr-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      tutorId: opts.tutorId, subjectId: opts.subjectId,
-      title: opts.title, level: opts.level || 'база',
-      schedule: opts.schedule || '', capacity: +opts.capacity || 8,
-      status: 'recruiting', createdAt: new Date().toISOString().slice(0, 10),
-    };
-    db.groups.push(g); DB.save();
-    return g;
-  }
-
-  /* ── мутации ─────────────────────────────────────────────────── */
-  function saveAttempt(id, patch) {
-    const a = attempt(id); if (!a) return null;
-    Object.assign(a, patch);
-    DB.save();
-    return a;
-  }
-  function ensureAttempt(sid, taskId, scope) {
-    let a = attemptFor(sid, taskId, scope);
-    if (a) return a;
-    const t = task(taskId);
-    a = {
-      id: 'at-' + Math.random().toString(36).slice(2, 9),
-      taskId, studentId: sid, subjectId: t ? t.subjectId : null,
-      context: scope && scope.lessonId ? 'lesson' : 'homework',
-      lessonId: (scope && scope.lessonId) || null,
-      assignmentId: (scope && scope.assignmentId) || null,
-      groupId: (scope && scope.groupId) || null,
-      code:'', answer:'', tries:0, isCorrect:null, firstTryCorrect:null,
-      activeSeconds:0, status:'issued', startedAt:null, submittedAt:null,
-    };
-    db.attempts.push(a); DB.save();
-    return a;
-  }
 
   /* ── форматирование ──────────────────────────────────────────── */
   const RU = 'ru-RU';
@@ -738,11 +549,10 @@ window.Core = (function () {
     assignmentsOf, decorateAssignment, ASSIGNMENT_STATUS,
     checkAnswer, dailyActivity, streak, topicMastery, taskNumberStats,
     attendance, mockSeries, kpi, goalProgress, upcoming, reviewQueue, tutorToday, groupStats,
-    inviteByCode, inviteState, inviteTarget, inviteAlreadyJoined, acceptInvite,
-    createInvite, revokeInvite, invitesOfTutor, inviteUrl,
-    saveAttempt, ensureAttempt,
-    createLesson, addLessonLink, removeLessonLink, attachTask, detachTask,
-    setLessonStatus, createAssignment, setGoal, createGroup,
+    inviteByCode, inviteState, inviteTarget, inviteAlreadyJoined, invitesOfTutor, inviteUrl,
     fmtTime, fmtDate, fmtDateFull, fmtDateTime, relDay, plural, fmtDur, fmtDurShort, fmtMoney,
   };
-})();
+}
+
+if (typeof module === 'object' && module.exports) module.exports = { createCore };
+else if (typeof window !== 'undefined') window.createCore = createCore;

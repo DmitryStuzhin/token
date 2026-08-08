@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Банк задач — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require('tutor');
@@ -147,75 +149,35 @@
   });
 
 
-  /* ── приёмник импорта ───────────────────────────────────────── */
-  const REQUIRED = ['id','subjectId','number','title','statement'];
-
-  function validate(arr) {
-    const errors = [];
-    if (!Array.isArray(arr)) return ['Ожидался массив задач, пришёл ' + typeof arr];
-    const have = new Set(C.db.tasks.map(t => t.id));
-    const seen = new Set();
-    arr.forEach((t, i) => {
-      REQUIRED.forEach(f => { if (t[f] == null || t[f] === '') errors.push(`[${i}] нет поля ${f}`); });
-      const subj = t.subjectId ? C.subject(t.subjectId) : null;
-      if (t.subjectId && !subj) errors.push(`[${i}] неизвестный subjectId «${t.subjectId}»`);
-      if (subj && t.number != null && !C.partOf(t.subjectId, +t.number))
-        errors.push(`[${i}] в предмете «${subj.name}» нет задания №${t.number}`);
-      if (t.id && have.has(t.id)) errors.push(`[${i}] id «${t.id}» уже есть в банке`);
-      if (t.id && seen.has(t.id)) errors.push(`[${i}] id «${t.id}» повторяется в файле`);
-      if (t.id) seen.add(t.id);
-      if (t.compare && !['exact','ci','set','numeric'].includes(t.compare))
-        errors.push(`[${i}] compare должен быть exact | ci | set | numeric`);
-    });
-    return errors;
-  }
-
-  function normalizeTask(t) {
-    const part = C.partOf(t.subjectId, +t.number) || {};
-    return {
-      id: String(t.id), subjectId: t.subjectId, number: +t.number,
-      topicId: t.topicId || part.topicId || null,
-      title: String(t.title), statement: String(t.statement),
-      answer: t.answer == null ? '' : String(t.answer),
-      answerType: t.answerType || 'string',
-      compare: t.compare || 'exact',
-      tolerance: t.tolerance || 0,
-      autoCheck: t.autoCheck != null ? !!t.autoCheck : !!(t.answer && String(t.answer).trim()),
-      difficulty: t.difficulty || 2,
-      source: t.source || 'import',
-    };
-  }
-
+  /* ── импорт: валидацию делает сервер ────────────────────────── */
   document.getElementById('imp-demo').addEventListener('click', () => {
     document.getElementById('imp').value = JSON.stringify([{
-      id:'q-18-1', subjectId:'inf', number:18, title:'Робот и таблица', topicId:'t-dp',
+      id:'q-18-100', subjectId:'inf', number:18, title:'Робот и таблица', topicId:'t-dp',
       statement:'Робот идёт по таблице из левого верхнего угла в правый нижний, собирая монеты. Найдите максимум и минимум.',
       answer:'143 61', answerType:'set', compare:'set', autoCheck:true, difficulty:2, source:'import-demo',
     }, {
-      id:'m-13-1', subjectId:'math', number:13, title:'Сечение призмы',
+      id:'m-13-100', subjectId:'math', number:13, title:'Сечение призмы',
       statement:'В правильной шестиугольной призме постройте сечение через три точки и найдите его площадь.',
       answer:'', autoCheck:false, difficulty:3, source:'import-demo',
     }], null, 2);
   });
 
-  document.getElementById('imp-run').addEventListener('click', () => {
+  document.getElementById('imp-run').addEventListener('click', async () => {
     const out = document.getElementById('imp-out');
     const raw = document.getElementById('imp').value.trim();
     if (!raw) { out.innerHTML = `<div class="verdict v-no">Пусто — вставьте JSON.</div>`; return; }
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch (e) { out.innerHTML = `<div class="verdict v-no">JSON не разобрался: ${UI.esc(e.message)}</div>`; return; }
-    const errors = validate(parsed);
-    if (errors.length) {
-      out.innerHTML = `<div class="verdict v-no">Импорт отклонён, ${errors.length}
-        ${C.plural(errors.length,'ошибка','ошибки','ошибок')}:<br>${errors.slice(0,8).map(UI.esc).join('<br>')}</div>`;
-      return;
+    try {
+      const res = await Api.importTasks(parsed);
+      out.innerHTML = `<div class="verdict v-ok">Импортировано ${res.imported}
+        ${C.plural(res.imported,'задача','задачи','задач')} — уже доступны для прикрепления.
+        <a href="/bank.html">обновить</a></div>`;
+    } catch (e) {
+      const list = (e.details || []).slice(0, 8).map(UI.esc).join('<br>');
+      out.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}${list ? ':<br>' + list : ''}</div>`;
     }
-    parsed.map(normalizeTask).forEach(t => C.db.tasks.push(t));
-    DB.save();
-    out.innerHTML = `<div class="verdict v-ok">Импортировано ${parsed.length}
-      ${C.plural(parsed.length,'задача','задачи','задач')} — уже доступны репетитору.
-      <a href="bank.html#bank" onclick="location.reload()">обновить</a></div>`;
   });
 
   if (location.hash) {

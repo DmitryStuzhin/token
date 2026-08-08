@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Проверка работ — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require('tutor');
@@ -119,12 +121,16 @@
       document.getElementById('save').disabled = false;
     }));
 
-  document.getElementById('save').addEventListener('click', () => {
-    C.saveAttempt(a.id, {
-      status:'checked', isCorrect: score > 0,
-      firstTryCorrect: score === 2 && (a.tries || 1) <= 1,
-    });
-    document.getElementById('save').disabled = true;
+  document.getElementById('save').addEventListener('click', async () => {
+    const btn = document.getElementById('save');
+    btn.disabled = true;
+    try {
+      await Api.review(a.id, score, document.getElementById('comment').value);
+    } catch (e) {
+      btn.disabled = false;
+      document.getElementById('done').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+      return;
+    }
     document.getElementById('done').innerHTML =
       `<div class="verdict ${score > 0 ? 'v-ok' : 'v-no'}">Проверено: ${score} из 2.
        Ученик увидит оценку и комментарий, работа ушла в статистику.

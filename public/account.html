@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Профиль — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require('student');
@@ -126,10 +128,10 @@
 
   document.querySelectorAll('[data-ch]').forEach(inp =>
     inp.addEventListener('change', () => {
-      let p = C.db.notificationPrefs.find(n => n.userId === me.id && n.channel === inp.dataset.ch);
-      if (!p) { p = { userId: me.id, channel: inp.dataset.ch }; C.db.notificationPrefs.push(p); }
-      p.enabled = inp.checked;
-      DB.save();
+      Api.setPref(inp.dataset.ch, inp.checked).catch(e => {
+        inp.checked = !inp.checked;
+        alert(e.message);
+      });
     }));
 
   const ed = document.getElementById('edit');

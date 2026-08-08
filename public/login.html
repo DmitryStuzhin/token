@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Вход — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 <style>
   .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 18px}
   .auth-box{width:100%;max-width:460px}
@@ -36,22 +36,23 @@
 <body>
 <div class="auth"><div class="auth-box" id="box"></div></div>
 
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const next = UI.qs('next');
   const already = Auth.session();
-  if (already && !UI.qs('force')) { location.href = next || already.home; return; }
+  if (already && !UI.qs('force')) { location.href = next ? '/' + next : already.home; return; }
 
-  let mode = Auth.isEmpty() ? 'signup' : (UI.qs('mode') || 'signin');
+  let mode = UI.qs('mode') || (UI.qs('next') ? 'signin' : 'signup');
   let role = UI.qs('role') || 'tutor';
 
-  function go(user) {
-    const home = Auth.ROLES[user.role].home;
-    location.href = next || home;
+  function go(res) {
+    location.href = next ? '/' + next : res.home;
   }
 
   function rolesHTML() {
@@ -61,25 +62,6 @@
       return `<div class="${cls}" data-role="${k}" ${r.enabled ? '' : 'title="пока недоступно"'}>
         <b>${r.label}</b><span>${r.enabled ? r.hint : 'скоро'}</span></div>`;
     }).join('')}</div>`;
-  }
-
-  function quickHTML() {
-    const acc = Auth.accounts();
-    if (!acc.length) return '';
-    return `<div class="card" style="margin-top:16px">
-      <div class="head"><h2>Аккаунты на этом устройстве</h2>
-        <span class="muted small">вход без пароля</span></div>
-      <div class="quick">${acc.map(a => `
-        <a href="#" data-uid="${a.id}">
-          ${UI.avatar(a.name, a.role === 'tutor' ? 'blue' : '')}
-          <span style="flex:1;min-width:0">
-            <b style="display:block;font-size:14px">${UI.esc(a.name)}</b>
-            <span class="muted small">${UI.esc(a.email)}</span></span>
-          <span class="badge ${a.role === 'tutor' ? 'b-blue' : 'b-green'}">${Auth.ROLES[a.role].label}</span>
-        </a>`).join('')}</div>
-      <div class="hint">Быстрое переключение для проверки: зайдите репетитором, выпустите
-        ссылку-приглашение, затем вернитесь сюда и войдите учеником.</div>
-    </div>`;
   }
 
   function render() {
@@ -117,11 +99,10 @@
         <div id="out"></div>
       </section>
 
-      ${signup ? '' : quickHTML()}
 
       <div class="note n-grey" style="margin-top:16px">
-        Прототип: аккаунты и данные хранятся в localStorage этого браузера, пароль
-        хешируется примитивно. В боевой версии — сервер, argon2 и сессия в httpOnly-куке.
+        Аккаунт создаётся на сервере: пароль солится и хешируется scrypt,
+        сессия живёт в httpOnly-куке — из JavaScript её не прочитать.
       </div>`;
 
     document.querySelectorAll('[data-mode]').forEach(b =>
@@ -145,13 +126,6 @@
     if (su) su.addEventListener('click', doSignup);
     const si = document.getElementById('do-signin');
     if (si) si.addEventListener('click', doSignin);
-
-    document.querySelectorAll('[data-uid]').forEach(a =>
-      a.addEventListener('click', e => {
-        e.preventDefault();
-        const res = Auth.loginAs(a.dataset.uid);
-        if (res.ok) go(res.user);
-      }));
 
     const box = document.getElementById('box');
     box.querySelectorAll('input').forEach(inp =>
@@ -183,7 +157,8 @@
     }
   }
 
-  function doSignup() {
+  async function doSignup() {
+    const btn = document.getElementById('do-signup');
     const data = {
       role,
       name: (document.getElementById('f-name') || {}).value,
@@ -195,17 +170,25 @@
       rate: (document.getElementById('f-rate') || {}).value,
       subjects: [...document.querySelectorAll('.f-subj:checked')].map(x => x.value),
     };
-    const res = Auth.register(data);
-    if (!res.ok) { document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`; return; }
-    go(res.user);
+    if (btn) btn.disabled = true;
+    try { go(await Api.register(data)); }
+    catch (e) {
+      if (btn) btn.disabled = false;
+      document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+    }
   }
 
-  function doSignin() {
-    const res = Auth.login(
-      (document.getElementById('f-email') || {}).value,
-      (document.getElementById('f-pass') || {}).value);
-    if (!res.ok) { document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(res.error)}</div>`; return; }
-    go(res.user);
+  async function doSignin() {
+    const btn = document.getElementById('do-signin');
+    if (btn) btn.disabled = true;
+    try {
+      go(await Api.login(
+        (document.getElementById('f-email') || {}).value,
+        (document.getElementById('f-pass') || {}).value));
+    } catch (e) {
+      if (btn) btn.disabled = false;
+      document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+    }
   }
 
   render();

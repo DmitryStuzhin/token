@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Кабинет репетитора — Token</title>
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="assets/db.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/auth.js"></script>
-<script src="assets/ui.js"></script>
+<script src="/api/state.js"></script>
+<script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script>
+<script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script>
+<script src="/assets/ui.js"></script>
 <script>
 (function () {
   const ses = Auth.require('tutor');
@@ -230,7 +232,10 @@
     b.addEventListener('click', () => UI.copy(C.inviteUrl(b.dataset.code), b)));
 
   document.querySelectorAll('.revoke').forEach(b =>
-    b.addEventListener('click', () => { C.revokeInvite(b.dataset.id); location.reload(); }));
+    b.addEventListener('click', async () => {
+      try { await Api.revokeInvite(b.dataset.id); location.reload(); }
+      catch (e) { alert(e.message); }
+    }));
 
   /* создание ссылки */
   const ni = document.getElementById('newinvite');
@@ -260,18 +265,23 @@
     kind.addEventListener('change', () => {
       document.getElementById('f-grp-wrap').hidden = kind.value !== 'group';
     });
-    document.getElementById('f-make').addEventListener('click', () => {
+    document.getElementById('f-make').addEventListener('click', async () => {
       const k = kind.value;
       const gid = document.getElementById('f-grp').value;
-      const inv = C.createInvite({
-        kind: k, tutorId: T,
-        subjectId: k === 'group' ? C.group(gid).subjectId : document.getElementById('f-subj').value,
-        groupId: k === 'group' ? gid : null,
-        createdBy: me.id,
-        maxUses: +document.getElementById('f-max').value || null,
-        prefix: me.name.slice(0, 2).toUpperCase(),
-        note: k === 'group' ? 'Набор в группу' : 'Индивидуальные занятия',
-      });
+      let inv;
+      try {
+        const res = await Api.createInvite({
+          kind: k,
+          subjectId: k === 'group' ? null : document.getElementById('f-subj').value,
+          groupId: k === 'group' ? gid : null,
+          maxUses: +document.getElementById('f-max').value || null,
+          note: k === 'group' ? 'Набор в группу' : 'Индивидуальные занятия',
+        });
+        inv = res.invite;
+      } catch (e) {
+        document.getElementById('f-out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+        return;
+      }
       const url = C.inviteUrl(inv.code);
       document.getElementById('f-out').innerHTML = `
         <div class="verdict v-ok" style="margin-top:12px">
@@ -319,33 +329,33 @@
         <button class="btn" id="n-make">Назначить</button>
       </div></div>`;
     document.getElementById('closeles').addEventListener('click', e => { e.preventDefault(); slot.innerHTML = ''; });
-    document.getElementById('n-make').addEventListener('click', () => {
+    document.getElementById('n-make').addEventListener('click', async () => {
       const [kind, id] = document.getElementById('n-target').value.split(':');
       const when = document.getElementById('n-start').value;
       if (!when) { alert('Укажите дату и время'); return; }
-      const opts = { tutorId:T, startsAt:new Date(when).toISOString(),
-                     durationMin:+document.getElementById('n-dur').value || 60 };
-      if (kind === 'e') {
-        const e = C.db.enrollments.find(x => x.id === id);
-        Object.assign(opts, { enrollmentId:e.id, subjectId:e.subjectId });
-      } else {
-        const g = C.group(id);
-        Object.assign(opts, { groupId:g.id, subjectId:g.subjectId });
-      }
-      const lesson = C.createLesson(opts);
-      location.href = 'lesson.html?lesson=' + lesson.id;
+      try {
+        const res = await Api.createLesson({
+          enrollmentId: kind === 'e' ? id : null,
+          groupId: kind === 'g' ? id : null,
+          startsAt: new Date(when).toISOString(),
+          durationMin: +document.getElementById('n-dur').value || 60,
+        });
+        location.href = 'lesson.html?lesson=' + res.id;
+      } catch (e) { alert(e.message); }
     });
   });
 
   /* ── создание группы ────────────────────────────────────────── */
   const ng = document.getElementById('newgroup');
-  if (ng) ng.addEventListener('click', () => {
+  if (ng) ng.addEventListener('click', async () => {
     const title = prompt('Название группы', 'ЕГЭ ' + C.subject(tp.subjects[0]).name.toLowerCase() + ' · вечерняя');
     if (!title) return;
     const schedule = prompt('Расписание (текстом)', 'вт, чт · 19:00') || '';
     const capacity = +prompt('Сколько мест?', '8') || 8;
-    const g = C.createGroup({ tutorId:T, subjectId:tp.subjects[0], title, schedule, capacity });
-    location.href = 'group.html?group=' + g.id;
+    try {
+      const res = await Api.createGroup({ subjectId: tp.subjects[0], title, schedule, capacity });
+      location.href = 'group.html?group=' + res.id;
+    } catch (e) { alert(e.message); }
   });
 
   if (location.hash) {

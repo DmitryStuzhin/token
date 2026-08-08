@@ -74,11 +74,6 @@ window.UI = (function () {
       ${devBar()}`;
     const out = document.getElementById('do-logout');
     if (out) out.addEventListener('click', e => { e.preventDefault(); Auth.logout(); });
-    const reset = document.getElementById('reset-demo');
-    if (reset) reset.addEventListener('click', e => {
-      e.preventDefault();
-      if (confirm('Удалить все аккаунты, занятия и решения на этом устройстве?')) DB.reset();
-    });
   }
 
   function head(h) {
@@ -90,8 +85,7 @@ window.UI = (function () {
 
   function devBar() {
     return `<div class="demo">
-      <b>Token.</b> Данные живут в localStorage этого браузера.
-      <button id="reset-demo">сбросить всё</button>
+      <b>Token</b> · данные на сервере, сессия в httpOnly-куке
     </div>`;
   }
 
