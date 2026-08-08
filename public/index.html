@@ -23,6 +23,34 @@
   const subjects = C.subjectsOf(S);
   let subj = UI.subjectId(S);
 
+  /* ── ученик ещё не с репетитором ───────────────────────────────
+     Без этого экрана новичок попадал в пустой кабинет и не имел
+     ни одного способа ввести код приглашения. */
+  function joinHTML() {
+    return `<div style="max-width:640px">
+      <section class="card" style="border:1.5px solid var(--brand)">
+        <div class="head"><div><h2>Присоединитесь к репетитору</h2>
+          <div class="hint">Пока вы ни к кому не привязаны — кабинет пустой</div></div></div>
+        <p style="font-size:14.5px;line-height:1.6;margin-bottom:16px">
+          Репетитор присылает ссылку-приглашение. Откройте её — или вставьте сюда
+          саму ссылку либо код из неё.
+        </p>
+        <div class="answer">
+          <input id="join-code" placeholder="код вида ABCD-1234 или ссылка целиком"
+                 autocomplete="off" spellcheck="false">
+          <button class="btn" id="join-go">Присоединиться</button>
+        </div>
+        <div id="join-out"></div>
+      </section>
+
+      <div class="note n-grey" style="margin-top:14px">
+        После присоединения здесь появятся расписание занятий, домашние задания
+        и статистика по предмету. К нескольким репетиторам и предметам можно
+        присоединиться по разным ссылкам.
+      </div>
+    </div>`;
+  }
+
   /* ── ближайшее занятие ─────────────────────────────────────── */
   function bannerHTML() {
     const nl = C.nextLesson(S, subj);
@@ -187,6 +215,11 @@
   }
 
   function render() {
+    if (!subjects.length) {
+      document.getElementById('content').innerHTML = joinHTML();
+      bindJoin();
+      return;
+    }
     document.getElementById('content').innerHTML = `
       ${bannerHTML()}
       ${kpiHTML()}
@@ -201,12 +234,42 @@
     active:'home',
     head:{
       title:`Привет, ${me.name.split(' ')[0]}!`,
-      sub: C.fmtDateFull(Date.now()) + ' · ' + subjects.map(s => s.name).join(', '),
-      actions: UI.subjectSwitcher(S, subj) +
-        `<span class="badge b-amber" style="font-size:13px;padding:8px 14px;margin-left:8px">🔥 ${k.streak} ${C.plural(k.streak,'день','дня','дней')}</span>`,
+      sub: subjects.length
+        ? C.fmtDateFull(Date.now()) + ' · ' + subjects.map(s => UI.esc(s.name)).join(', ')
+        : C.fmtDateFull(Date.now()),
+      actions: subjects.length
+        ? UI.subjectSwitcher(S, subj) +
+          `<span class="badge b-amber" style="font-size:13px;padding:8px 14px;margin-left:8px">🔥 ${k.streak} ${C.plural(k.streak,'день','дня','дней')}</span>`
+        : '',
     },
     body:'',
   });
+  /* приём кода: принимаем и сам код, и вставленную ссылку целиком */
+  function bindJoin() {
+    const input = document.getElementById('join-code');
+    const btn = document.getElementById('join-go');
+    if (!input || !btn) return;
+    const go = async () => {
+      const raw = input.value.trim();
+      const m = raw.match(/[?&]code=([^&\s]+)/i);
+      const code = decodeURIComponent(m ? m[1] : raw);
+      const out = document.getElementById('join-out');
+      if (!code) { out.innerHTML = `<div class="verdict v-no">Введите код или вставьте ссылку.</div>`; return; }
+      btn.disabled = true;
+      try {
+        const res = await Api.acceptInvite(code);
+        out.innerHTML = `<div class="verdict v-ok">Готово — предмет
+          «${UI.esc(res.target.subject ? res.target.subject.name : '')}» добавлен. Обновляем кабинет…</div>`;
+        setTimeout(() => location.reload(), 700);
+      } catch (e) {
+        btn.disabled = false;
+        out.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+      }
+    };
+    btn.addEventListener('click', go);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  }
+
   UI.bindSubjectSwitcher(id => { subj = id; render(); });
   render();
 })();
