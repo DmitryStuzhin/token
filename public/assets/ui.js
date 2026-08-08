@@ -15,24 +15,25 @@ window.UI = (function () {
     if (s.role === 'tutor') {
       const q = C.reviewQueue(s.tutorId).length;
       return [
-        { key:'today',   href:'tutor.html',             ico:'◧', label:'Сегодня' },
-        { key:'check',   href:'tutor-check.html',       ico:'✓', label:'Проверка', pill:q || null },
-        { key:'groups',  href:'tutor.html#groups',      ico:'⛁', label:'Группы' },
-        { key:'students',href:'tutor.html#students',    ico:'☺', label:'Ученики' },
-        { key:'invites', href:'tutor.html#invites',     ico:'⇗', label:'Приглашения' },
-        { key:'bank',    href:'bank.html',              ico:'▤', label:'Банк задач' },
+        { key:'today',    href:'/tutor.html',       ico:'◧', label:'Сегодня' },
+        { key:'lesson',   href:'/lesson.html',      ico:'▶', label:'Занятие' },
+        { key:'check',    href:'/tutor-check.html', ico:'✓', label:'Проверка', pill:q || null },
+        { key:'students', href:'/students.html',    ico:'☺', label:'Ученики' },
+        { key:'groups',   href:'/groups.html',      ico:'⛁', label:'Группы' },
+        { key:'invites',  href:'/invites.html',     ico:'⇗', label:'Приглашения' },
+        { key:'bank',     href:'/bank.html',        ico:'▤', label:'Банк задач' },
       ];
     }
     if (s.role === 'parent') {
-      return [{ key:'progress', href:'parent.html', ico:'◧', label:'Прогресс ребёнка' }];
+      return [{ key:'progress', href:'/parent.html', ico:'◧', label:'Прогресс ребёнка' }];
     }
     const overdue = C.assignmentsOf(s.studentId).filter(a => a.status === 'overdue').length;
     return [
-      { key:'home',    href:'index.html',    ico:'◧', label:'Главная' },
-      { key:'lesson',  href:'lesson.html',   ico:'▶', label:'Занятие' },
-      { key:'hw',      href:'homework.html', ico:'✎', label:'Д/З', pill:overdue || null },
-      { key:'stats',   href:'stats.html',    ico:'▤', label:'Статистика' },
-      { key:'account', href:'account.html',  ico:'◔', label:'Профиль' },
+      { key:'home',    href:'/index.html',    ico:'◧', label:'Главная' },
+      { key:'lesson',  href:'/lesson.html',   ico:'▶', label:'Занятие' },
+      { key:'hw',      href:'/homework.html', ico:'✎', label:'Д/З', pill:overdue || null },
+      { key:'stats',   href:'/stats.html',    ico:'▤', label:'Статистика' },
+      { key:'account', href:'/account.html',  ico:'◔', label:'Профиль' },
     ];
   }
 

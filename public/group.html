@@ -26,7 +26,7 @@
     UI.page({
     session: ses, active:'groups', head:{ title:'Группа не найдена' },
       body:`<div class="card">${UI.empty('Нет такой группы',
-        '<a href="tutor.html#groups">к списку групп</a>')}</div>` });
+        '<a href="/groups.html">к списку групп</a>')}</div>` });
     return;
   }
 
@@ -119,7 +119,7 @@
     if (!invite) return `<div class="card">
       <div class="head"><h2>Набор в группу</h2></div>
       ${UI.empty('Активной ссылки нет', 'Создайте приглашение на странице репетитора.')}
-      <a class="btn ghost sm" style="margin-top:12px" href="tutor.html#invites">К приглашениям</a></div>`;
+      <a class="btn ghost sm" style="margin-top:12px" href="/invites.html">К приглашениям</a></div>`;
     const url = C.inviteUrl(invite.code);
     const left = invite.maxUses == null ? '∞' : Math.max(0, invite.maxUses - invite.usedCount);
     return `<div class="card">
@@ -142,7 +142,7 @@
     active:'groups',
     head:{ title: g.title,
       sub:`${UI.esc(gs.subject.name)} · ${g.level} · ${g.schedule}`,
-      actions:`<a class="btn ghost" href="tutor.html#groups">Все группы</a>` },
+      actions:`<a class="btn ghost" href="/groups.html">Все группы</a>` },
     body:`${kpiHTML()}
       ${membersHTML()}
       <div class="cols c2" style="margin-top:14px">${lessonsHTML()}${assignmentsHTML()}</div>

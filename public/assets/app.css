@@ -248,3 +248,32 @@ td.num,th.num{text-align:right;padding-right:0;font-variant-numeric:tabular-nums
   .heat{grid-template-columns:repeat(7,1fr)}
   .main{padding:18px}
 }
+
+/* ── вкладки репетитора: шаги, формы, таблицы ─────────────────── */
+.kpis-5{grid-template-columns:repeat(5,1fr)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.step{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;
+  border:1px solid var(--line);border-radius:12px}
+.step b{display:block;font-size:14px;margin-bottom:2px}
+.step .muted{display:block;line-height:1.4}
+
+.form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.fld{display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px}
+.fld > span{font-size:12px;color:var(--muted)}
+.fld input,.fld select{width:100%;padding:10px 12px;border:1.5px solid var(--line);
+  border-radius:10px;background:var(--panel);color:var(--text);font:inherit}
+.fld input:focus,.fld select:focus{outline:0;border-color:var(--brand)}
+.fld[hidden]{display:none}
+
+.subform{margin-top:14px;padding:16px;border:1px solid var(--line);
+  border-radius:12px;background:var(--bg)}
+.subform .head{margin-bottom:12px}
+
+.code{font-family:var(--mono);font-size:13px;letter-spacing:.02em}
+.who{display:flex;align-items:center;gap:10px}
+.acts-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+
+@media (max-width:1000px){
+  .kpis-5{grid-template-columns:repeat(2,1fr)}
+  .steps{grid-template-columns:1fr}
+}
