@@ -84,7 +84,7 @@
           <span class="s">${l.durationMin} мин · ${(l.taskIds||[]).length}
             ${C.plural((l.taskIds||[]).length,'задание','задания','заданий')}</span></span>
         <span class="r">${past ? present + ' из ' + gs.size + ' были' : 'впереди'}
-          <br><a href="lesson.html?role=tutor&lesson=${l.id}">открыть</a></span></div>`;
+          <br><a href="lesson.html?lesson=${l.id}">открыть</a></span></div>`;
     }).join('');
     return `<div class="card">
       <div class="head"><h2>Занятия группы</h2><span class="muted small">${g.schedule}</span></div>

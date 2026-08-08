@@ -16,29 +16,32 @@
   const ses = Auth.require();
   if (!ses) return;
   const C = Core;
-  const S = ses.studentId;          /* кто принимает приглашение */
-  const code = UI.qs('code') || '';
-  const inv = C.inviteByCode(code);
+
+  const isStudent = ses.role === 'student';
+  const S = ses.studentId;                       /* null у репетитора и родителя */
+  const code = (UI.qs('code') || '').trim();
+  const inv = code ? C.inviteByCode(code) : null;
   const st = C.inviteState(inv);
   const target = C.inviteTarget(inv);
-  const joined = inv && C.inviteAlreadyJoined(inv, S);
-  const me = C.studentUser(S);
+  const joined = inv && isStudent && C.inviteAlreadyJoined(inv, S);
+  const mine = inv && ses.tutorId && inv.tutorId === ses.tutorId;
 
-  function card(inner) {
-    return `<div style="max-width:620px;margin:0 auto">${inner}</div>`;
-  }
+  const wrap = inner => `<div style="max-width:640px">${inner}</div>`;
+  const backHref = ses.home;
 
+  /* ── что даёт приглашение ───────────────────────────────────── */
   function whatHTML() {
     if (!target) return '';
     if (target.kind === 'group') {
       const g = target.group;
       const stats = C.groupStats(g.id);
       return `
-        <div class="field"><div class="k">Вы вступаете в группу</div>
+        <div class="field"><div class="k">Вступление в группу</div>
           <div class="v" style="font-size:18px">${UI.esc(g.title)}</div></div>
         <div class="field"><div class="k">Предмет</div>
           <div class="v">${UI.esc(target.subject.name)} · уровень: ${UI.esc(g.level)}</div></div>
-        <div class="field"><div class="k">Расписание</div><div class="v">${UI.esc(g.schedule)}</div></div>
+        ${g.schedule ? `<div class="field"><div class="k">Расписание</div>
+          <div class="v">${UI.esc(g.schedule)}</div></div>` : ''}
         <div class="field"><div class="k">Репетитор</div>
           <div class="v">${UI.esc(target.tutor.user.name)}</div></div>
         <div class="field" style="margin-bottom:0"><div class="k">Мест</div>
@@ -47,63 +50,102 @@
     }
     if (target.kind === 'enrollment') {
       return `
-        <div class="field"><div class="k">Вы записываетесь на индивидуальные занятия</div>
+        <div class="field"><div class="k">Индивидуальные занятия</div>
           <div class="v" style="font-size:18px">${UI.esc(target.subject.name)}</div></div>
         <div class="field"><div class="k">Репетитор</div>
-          <div class="v">${UI.esc(target.tutor.user.name)} · ${target.tutor.profile.yearsExp}
-            ${C.plural(target.tutor.profile.yearsExp,'год','года','лет')} опыта</div></div>
+          <div class="v">${UI.esc(target.tutor.user.name)}${target.tutor.profile.yearsExp
+            ? ' · ' + target.tutor.profile.yearsExp + ' ' +
+              C.plural(target.tutor.profile.yearsExp,'год','года','лет') + ' опыта' : ''}</div></div>
         <div class="field" style="margin-bottom:0"><div class="k">Что появится в кабинете</div>
           <div class="v" style="font-weight:400;font-size:14px">Расписание занятий, домашние задания,
             статистика по этому предмету</div></div>`;
     }
     if (target.kind === 'guardian') {
-      return `
-        <div class="field"><div class="k">Доступ родителя к прогрессу</div>
-          <div class="v" style="font-size:18px">${UI.esc(target.student.user.name)}</div></div>
-        <div class="field" style="margin-bottom:0"><div class="k">Что будет видно</div>
-          <div class="v" style="font-weight:400;font-size:14px">Расписание, посещаемость, статусы и оценки д/з,
-            статистика. Решения ребёнка и внутренние заметки репетитора — нет.</div></div>`;
+      return `<div class="field" style="margin-bottom:0"><div class="k">Доступ родителя</div>
+        <div class="v" style="font-weight:400;font-size:14px">Кабинет родителя ещё не собран —
+          такие ссылки пока не принимаются.</div></div>`;
     }
     return '';
   }
 
-  function body() {
-    if (!code) {
-      return card(`<section class="card">
-        <div class="head"><h2>Введите код приглашения</h2></div>
-        <p class="muted small" style="margin-bottom:14px">
-          Ссылка вида <code>invite.html?code=КОД</code> приходит от репетитора.</p>
-        <div class="answer">
-          <input id="code" placeholder="например DM-INF-7K2P" style="text-transform:uppercase">
-          <button class="btn" id="go">Открыть</button>
-        </div>
-      </section>`);
-    }
+  /* ── экраны ─────────────────────────────────────────────────── */
+  function askCode() {
+    return wrap(`<section class="card">
+      <div class="head"><h2>Код приглашения</h2></div>
+      <p class="muted small" style="margin-bottom:14px">
+        Ссылку присылает репетитор. Если у вас только код — введите его здесь.</p>
+      <div class="answer">
+        <input id="code" placeholder="например DM-7K2P" style="text-transform:uppercase">
+        <button class="btn" id="go">Открыть</button>
+      </div>
+    </section>`);
+  }
 
-    if (!inv || !st.ok) {
-      return card(`<section class="card">
-        <div class="head"><h2>Приглашение недоступно</h2>
-          <span class="badge b-red">${UI.esc(st.label)}</span></div>
-        <div class="verdict v-no">Код <b>${UI.esc(code)}</b> — ${UI.esc(st.label.toLowerCase())}.</div>
-        <p class="muted small" style="margin-top:14px">
-          Попросите репетитора выпустить новую ссылку: старая могла истечь,
-          исчерпать лимит переходов или быть отозвана.</p>
-        <a class="btn ghost" style="margin-top:14px" href="index.html">В кабинет</a>
-      </section>`);
-    }
+  function badInvite() {
+    return wrap(`<section class="card">
+      <div class="head"><h2>Приглашение недоступно</h2>
+        <span class="badge b-red">${UI.esc(st.label)}</span></div>
+      <div class="verdict v-no">Код <b>${UI.esc(code)}</b> — ${UI.esc(st.label.toLowerCase())}.</div>
+      <p class="muted small" style="margin-top:14px">
+        Попросите репетитора выпустить новую ссылку: старая могла истечь,
+        исчерпать лимит переходов или быть отозвана.</p>
+      <a class="btn ghost" style="margin-top:14px" href="${backHref}">В кабинет</a>
+    </section>`);
+  }
 
-    if (joined) {
-      return card(`<section class="card">
-        <div class="head"><h2>Вы уже присоединены</h2><span class="badge b-green">активно</span></div>
-        ${whatHTML()}
-        <a class="btn" style="margin-top:16px" href="index.html">Открыть кабинет</a>
-      </section>`);
-    }
+  function alreadyIn() {
+    return wrap(`<section class="card">
+      <div class="head"><h2>Вы уже присоединены</h2><span class="badge b-green">активно</span></div>
+      ${whatHTML()}
+      <a class="btn" style="margin-top:16px" href="index.html">Открыть кабинет</a>
+    </section>`);
+  }
 
-    return card(`
+  /* репетитор (или родитель) открыл ссылку для ученика */
+  function preview() {
+    const url = C.inviteUrl(inv.code);
+    const left = inv.maxUses == null ? '∞' : Math.max(0, inv.maxUses - inv.usedCount);
+    return wrap(`
       <section class="card">
         <div class="head">
-          <div><h2>Приглашение от ${UI.esc(target.tutor ? target.tutor.user.name : 'ученика')}</h2>
+          <div><h2>${mine ? 'Ваша ссылка-приглашение' : 'Приглашение'}</h2>
+            <div class="hint">Так её увидит ученик</div></div>
+          ${target.subject ? UI.subjectTag(target.subject) : ''}
+        </div>
+        ${inv.note ? `<div class="note n-blue" style="margin-bottom:16px">${UI.esc(inv.note)}</div>` : ''}
+        ${whatHTML()}
+      </section>
+
+      <section class="card" style="margin-top:14px">
+        <div class="head"><h2>Ссылка</h2>
+          <span class="muted small">переходов: ${inv.usedCount} · осталось: ${left}</span></div>
+        <div class="editor" style="margin-bottom:12px">
+          <div class="ehead"><span>код ${UI.esc(inv.code)}</span>
+            <span>${inv.expiresAt ? 'до ' + C.fmtDate(inv.expiresAt) : 'бессрочно'}</span></div>
+          <pre style="min-height:0;white-space:pre-wrap;word-break:break-all">${UI.esc(url)}</pre>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="copy">Скопировать ссылку</button>
+          <a class="btn sm ghost" href="login.html?force=1&next=${encodeURIComponent('invite.html?code=' + inv.code)}">
+            Войти учеником и присоединиться</a>
+          <a class="btn sm grey" href="${backHref}">Назад в кабинет</a>
+        </div>
+      </section>
+
+      <div class="note n-grey" style="margin-top:14px">
+        Вы вошли как <b>${UI.esc(Auth.ROLES[ses.role].label.toLowerCase())}</b>, поэтому присоединиться
+        по этой ссылке нельзя — приглашение принимает ученик. Чтобы проверить сценарий целиком,
+        зарегистрируйте отдельный аккаунт ученика и откройте ссылку под ним.
+      </div>`);
+  }
+
+  /* ученик: можно присоединиться */
+  function accept() {
+    const prof = C.student(S);
+    return wrap(`
+      <section class="card">
+        <div class="head">
+          <div><h2>Приглашение от ${UI.esc(target.tutor ? target.tutor.user.name : '—')}</h2>
             <div class="hint">код ${UI.esc(inv.code)}${
               inv.expiresAt ? ' · действует до ' + C.fmtDate(inv.expiresAt) : ''}</div></div>
           ${target.subject ? UI.subjectTag(target.subject) : ''}
@@ -113,29 +155,34 @@
       </section>
 
       <section class="card" style="margin-top:14px">
-        <div class="head"><h2>Вы входите как</h2></div>
+        <div class="head"><h2>Вы входите как</h2>
+          <a href="login.html?force=1&next=${encodeURIComponent('invite.html?code=' + inv.code)}">сменить аккаунт</a></div>
         <div class="row">
-          ${UI.avatar(me.name)}
-          <span class="grow"><span class="t">${UI.esc(me.name)}</span>
-            <span class="s">${C.student(S).grade} класс · ${UI.esc(C.student(S).school)}</span></span>
+          ${UI.avatar(ses.user.name)}
+          <span class="grow"><span class="t">${UI.esc(ses.user.name)}</span>
+            <span class="s">${prof ? prof.grade + ' класс' : ''}${
+              prof && prof.school ? ' · ' + UI.esc(prof.school) : ''} · ${UI.esc(ses.user.email)}</span></span>
         </div>
         <div class="answer">
-          <span class="muted small" style="flex:1">Привязка создаётся сразу и видна репетитору.</span>
+          <span class="muted small" style="flex:1">Привязка создаётся сразу и появится у репетитора.</span>
           <button class="btn" id="accept">Присоединиться</button>
         </div>
         <div id="out"></div>
-      </section>
+      </section>`);
+  }
 
-      <div class="note n-grey" style="margin-top:14px">
-        Это <b>Invite</b> из доменной модели: одна таблица закрывает индивидуальную привязку,
-        вступление в группу и доступ родителя — отличается только <code>kind</code>.
-        Принятие создаёт <code>Enrollment</code> или <code>GroupMember</code>, счётчик переходов растёт.
-      </div>`);
+  function body() {
+    if (!code) return askCode();
+    if (!inv || !st.ok) return badInvite();
+    if (joined) return alreadyIn();
+    if (!isStudent) return preview();
+    if (inv.kind === 'guardian') return preview();
+    return accept();
   }
 
   UI.page({
     session: ses,
-    active:'home',
+    active: isStudent ? 'home' : 'invites',
     head:{ title:'Приглашение', sub:'Присоединение к репетитору или группе по ссылке' },
     body: body(),
   });
@@ -145,6 +192,9 @@
     const v = document.getElementById('code').value.trim();
     if (v) location.href = 'invite.html?code=' + encodeURIComponent(v);
   });
+
+  const cp = document.getElementById('copy');
+  if (cp) cp.addEventListener('click', () => UI.copy(C.inviteUrl(inv.code), cp));
 
   const acc = document.getElementById('accept');
   if (acc) acc.addEventListener('click', () => {
@@ -156,7 +206,6 @@
     out.innerHTML = `<div class="verdict v-ok">
       Готово. ${t.kind === 'group' ? 'Вы в группе «' + UI.esc(t.group.title) + '»'
         : 'Занятия по предмету «' + UI.esc(t.subject.name) + '» добавлены'}.
-      Групповые задания уже развернулись на вас.
       <a href="index.html">открыть кабинет →</a></div>`;
   });
 })();

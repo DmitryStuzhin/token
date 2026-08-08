@@ -80,7 +80,7 @@
           <span class="r" style="display:flex;gap:8px;align-items:center">
             ${UI.subjectTag(subj)}
             ${call ? `<a class="btn sm ghost" href="${call.url}" target="_blank" rel="noopener">Созвон</a>` : ''}
-            <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}">Вести</a></span></div>`;
+            <a class="btn sm" href="lesson.html?lesson=${l.id}">Вести</a></span></div>`;
       }
       const sid = C.studentsOfLesson(l)[0];
       const u = C.studentUser(sid);
@@ -92,7 +92,7 @@
         <span class="r" style="display:flex;gap:8px;align-items:center">
           ${UI.subjectTag(subj)}
           ${call ? `<a class="btn sm ghost" href="${call.url}" target="_blank" rel="noopener">Созвон</a>` : ''}
-          <a class="btn sm" href="lesson.html?role=tutor&lesson=${l.id}&student=${sid}">Вести</a></span></div>`;
+          <a class="btn sm" href="lesson.html?lesson=${l.id}&student=${sid}">Вести</a></span></div>`;
     }).join('');
     return `<section class="card">
       <div class="head"><h2>Сегодня</h2>
@@ -272,9 +272,22 @@
         prefix: me.name.slice(0, 2).toUpperCase(),
         note: k === 'group' ? 'Набор в группу' : 'Индивидуальные занятия',
       });
-      document.getElementById('f-out').innerHTML =
-        `<div class="verdict v-ok">Ссылка создана: <b>${UI.esc(C.inviteUrl(inv.code))}</b>
-         <a href="tutor.html#invites" onclick="location.reload()">обновить список</a></div>`;
+      const url = C.inviteUrl(inv.code);
+      document.getElementById('f-out').innerHTML = `
+        <div class="verdict v-ok" style="margin-top:12px">
+          Ссылка создана — код <b>${UI.esc(inv.code)}</b>
+        </div>
+        <div class="editor" style="margin-top:10px">
+          <div class="ehead"><span>отправьте ученику</span><span>переходов: 0</span></div>
+          <pre style="min-height:0;white-space:pre-wrap;word-break:break-all">${UI.esc(url)}</pre>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn sm" id="f-copy">Скопировать</button>
+          <a class="btn sm ghost" href="invite.html?code=${encodeURIComponent(inv.code)}">Открыть</a>
+          <button class="btn sm grey" id="f-refresh">Обновить список</button>
+        </div>`;
+      document.getElementById('f-copy').addEventListener('click', e => UI.copy(url, e.target));
+      document.getElementById('f-refresh').addEventListener('click', () => location.reload());
     });
   });
 
