@@ -357,8 +357,8 @@ export interface components {
             capacity?: number;
         };
         CreateLessonRequest: {
-            enrollmentId?: string;
-            groupId?: string;
+            enrollmentId?: string | null;
+            groupId?: string | null;
             /** Format: date-time */
             startsAt: string;
             durationMin?: number;

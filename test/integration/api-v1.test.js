@@ -74,6 +74,7 @@ test('API v1 provides screen DTO, pagination, ETag and Problem Details', async (
     .post('/api/v1/lessons')
     .set('Idempotency-Key', 'api-v1-lesson-key')
     .send({
+      enrollmentId: null,
       groupId: created.body.id,
       startsAt: new Date(Date.now() + 3_600_000).toISOString(),
       durationMin: 60,

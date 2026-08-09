@@ -63,7 +63,7 @@ const bodySchemas = [
   [/^\/invites$/, z.object({ kind:z.enum(['enrollment','group']), subjectId:z.string().optional(), groupId:z.string().optional(), maxUses:z.number().int().min(1).max(10000).nullable().optional(), expiresAt:z.iso.datetime().nullable().optional(), note:z.string().max(2000).optional() })],
   [/^\/invites\/accept$/, z.object({ code:z.string().min(3).max(100) })],
   [/^\/groups$/, z.object({ subjectId:z.string(), title:z.string().min(1).max(200), level:z.string().max(100).optional(), schedule:z.string().max(500).optional(), capacity:z.number().int().min(1).max(1000).optional() })],
-  [/^\/lessons$/, z.object({ enrollmentId:z.string().optional(), groupId:z.string().optional(), startsAt:z.iso.datetime(), durationMin:z.number().int().min(10).max(600).optional() })],
+  [/^\/lessons$/, z.object({ enrollmentId:z.string().nullable().optional(), groupId:z.string().nullable().optional(), startsAt:z.iso.datetime(), durationMin:z.number().int().min(10).max(600).optional() })],
   [/^\/lessons\/[^/]+\/links$/, z.object({ type:z.enum(['call','board','material']).optional(), label:z.string().max(300).optional(), url:z.url() })],
   [/^\/lessons\/[^/]+\/tasks$/, z.object({ taskId:z.string().min(1).max(200) })],
   [/^\/lessons\/[^/]+\/status$/, z.object({ status:z.enum(['planned','done','moved','cancelled','missed']) })],

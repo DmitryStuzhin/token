@@ -331,8 +331,8 @@ components:
       type: object
       required: [startsAt]
       properties:
-        enrollmentId: { type: string }
-        groupId: { type: string }
+        enrollmentId: { type: [string, 'null'] }
+        groupId: { type: [string, 'null'] }
         startsAt: { type: string, format: date-time }
         durationMin: { type: integer, minimum: 10, maximum: 600 }
     CreateAssignmentRequest:
