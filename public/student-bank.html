@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Банк заданий — Token</title><link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<script src="/api/v1/screens/student-bank.js"></script><script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script><script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script><script src="/assets/ui.js"></script>
+<script>
+(function () {
+  const ses = Auth.require('student'); if (!ses) return;
+  const C = Core; const S = ses.studentId; const selectedId = UI.qs('subject');
+  const selected = C.db.subjects.find(s => s.id === selectedId);
+
+  if (!selected) {
+    const cards = C.db.subjects.map(s => {
+      const count = C.db.tasks.filter(t => t.subjectId === s.id).length;
+      return `<a class="card" href="/student-bank.html?subject=${encodeURIComponent(s.id)}" style="display:block;text-decoration:none;padding:26px">
+        <div style="font-size:21px;font-weight:750;margin-bottom:9px">${UI.subjectTag(s)} ${UI.esc(s.name)}</div>
+        <div class="muted">${s.exam.name} · ${s.exam.parts.length} номеров · ${count} ${C.plural(count,'задача','задачи','задач')}</div>
+        <div style="margin-top:22px;color:var(--brand);font-weight:650">Открыть задания →</div>
+      </a>`;
+    }).join('');
+    UI.page({session:ses,active:'practice',head:{title:'Банк заданий',sub:'Выберите предмет для самостоятельной практики'},
+      body:`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">${cards}</div>`});
+    return;
+  }
+
+  const selectedNumber = Number(UI.qs('number'));
+  const validNumber = selected.exam.parts.some(p => p.number === selectedNumber) ? selectedNumber : null;
+  const baseTasks = C.db.tasks.filter(t => t.subjectId === selected.id);
+  const dropdown = (id, initial, options) => `<div class="filter-dropdown" data-dropdown="${id}">
+    <input type="hidden" id="${id}" value="${UI.esc(initial)}">
+    <button type="button" class="filter-dropdown-trigger" aria-expanded="false"><span>${UI.esc(options[0][1])}</span><i></i></button>
+    <div class="filter-dropdown-menu">${options.map(([value,label],index) => `<button type="button" data-value="${UI.esc(value)}" class="${index === 0 ? 'selected' : ''}">${UI.esc(label)}<span>✓</span></button>`).join('')}</div>
+  </div>`;
+  const numberRows = selected.exam.parts.map(p => {
+    const tasks = baseTasks.filter(t => t.number === p.number);
+    const solved = tasks.filter(t => { const a = C.attemptFor(S,t.id,{context:'practice'}); return a && a.status === 'checked' && a.isCorrect; }).length;
+    return `<a class="row" href="/student-bank.html?subject=${encodeURIComponent(selected.id)}&number=${p.number}">
+      <span class="badge b-blue">№${p.number}</span><span class="grow"><span class="t">Задание №${p.number}</span>
+      <span class="s">${tasks.length} ${C.plural(tasks.length,'задача','задачи','задач')}${solved ? ` · решено ${solved}` : ''}</span></span><span class="r">Открыть →</span></a>`;
+  }).join('');
+  const catalog = validNumber ? `<div class="head" style="margin-top:20px"><div><h2>Задание №${validNumber}</h2><div class="hint">Все задачи этого номера</div></div>
+      <a class="btn ghost sm" href="/student-bank.html?subject=${encodeURIComponent(selected.id)}">← К списку номеров</a></div>
+    <div class="practice-filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px">
+      ${dropdown('filter-difficulty','',[['','Любая сложность'],['1','Easy'],['2','Medium'],['3','Hard']])}
+      ${dropdown('filter-date','new',[['new','Сначала новые'],['old','Сначала старые'],['easy-first','Сначала простые'],['hard-first','Сначала тяжёлые']])}
+    </div><div class="muted small" id="result-count" style="margin-bottom:10px"></div><div class="row-list" id="task-results"></div>`
+    : `<div class="head" style="margin-top:20px"><div><h2>Номера заданий</h2><div class="hint">Выберите номер, чтобы увидеть все задачи этого типа.</div></div></div><div class="row-list">${numberRows}</div>`;
+  const body = `<section class="card">
+    <div class="head"><div><h2>${UI.subjectTag(selected)} ${UI.esc(selected.name)}</h2><div class="hint">Сначала выберите номер экзамена.</div></div><a class="btn ghost sm" href="/student-bank.html">← Все предметы</a></div>
+    ${catalog}
+  </section>`;
+  UI.page({session:ses,active:'practice',head:{title:'Банк заданий',sub:'Самостоятельная практика вне занятий'},body});
+
+  if (!validNumber) return;
+  function render() {
+    const difficulty = document.getElementById('filter-difficulty').value;
+    const dateMode = document.getElementById('filter-date').value;
+    let tasks = baseTasks.filter(t => t.number === validNumber)
+      .filter(t => !difficulty || t.difficulty === Number(difficulty));
+    tasks.sort((a,b) => {
+      if (dateMode === 'easy-first' || dateMode === 'hard-first') {
+        const byDifficulty = (a.difficulty || 2) - (b.difficulty || 2);
+        if (byDifficulty) return byDifficulty * (dateMode === 'hard-first' ? -1 : 1);
+      }
+      return (new Date(a.publishedAt || 0) - new Date(b.publishedAt || 0)) * (dateMode === 'old' ? 1 : -1);
+    });
+    document.getElementById('result-count').textContent = `Найдено: ${tasks.length}`;
+    document.getElementById('task-results').innerHTML = tasks.length ? tasks.map(t => {
+      const a = C.attemptFor(S,t.id,{context:'practice'}); const done = a && a.status === 'checked' && a.isCorrect;
+      const inner = `<div class="bank-task-summary"><span class="badge b-blue">№${t.number}</span><span class="grow"><span class="t">${UI.esc(t.title)}</span>
+        <span class="s">${UI.difficultyHTML(t.difficulty)} · ${UI.esc((C.topic(t.topicId)||{}).name||'')} · опубликовано ${C.fmtDate(t.publishedAt)}</span></span>
+        ${done ? '<span class="badge b-green">Решено ✓</span>' : a ? '<span class="r">Продолжить →</span>' : '<span class="r">Перейти к решению →</span>'}</div>
+        <div class="bank-task-statement">${UI.esc(t.statement)}</div>
+        <div class="bank-task-open">Нажмите на задачу, чтобы открыть поле ответа${t.taskType === 'programming' ? ' и редактор кода' : ''}</div>`;
+      return a
+        ? `<a class="row bank-task-preview" href="/task.html?task=${encodeURIComponent(t.id)}&practice=1&attempt=${encodeURIComponent(a.id)}">${inner}</a>`
+        : `<button type="button" class="row bank-task-preview practice-open" data-task="${UI.attr(t.id)}">${inner}</button>`;
+    }).join('') : '<div class="empty">По выбранным фильтрам задач нет.</div>';
+    document.querySelectorAll('.practice-open').forEach(button => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        const attempt = await Api.startPractice(button.dataset.task);
+        location.href = `/task.html?task=${encodeURIComponent(button.dataset.task)}&practice=1&attempt=${encodeURIComponent(attempt.attemptId)}`;
+      } catch(e) { button.disabled=false; alert(e.message); }
+    }));
+  }
+  document.querySelectorAll('.filter-dropdown').forEach(box => {
+    const trigger = box.querySelector('.filter-dropdown-trigger');
+    const input = box.querySelector('input');
+    trigger.addEventListener('click', () => {
+      const opening = !box.classList.contains('open');
+      document.querySelectorAll('.filter-dropdown.open').forEach(other => other.classList.remove('open'));
+      box.classList.toggle('open', opening); trigger.setAttribute('aria-expanded', String(opening));
+    });
+    box.querySelectorAll('.filter-dropdown-menu button').forEach(option => option.addEventListener('click', () => {
+      input.value = option.dataset.value;
+      trigger.querySelector('span').textContent = option.childNodes[0].textContent;
+      if (input.id === 'filter-difficulty') {
+        trigger.classList.remove('easy','medium','hard');
+        const level = ({'1':'easy','2':'medium','3':'hard'})[option.dataset.value];
+        if (level) trigger.classList.add(level);
+      }
+      box.querySelectorAll('.filter-dropdown-menu button').forEach(item => item.classList.toggle('selected', item === option));
+      box.classList.remove('open'); trigger.setAttribute('aria-expanded','false'); render();
+    }));
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.filter-dropdown')) document.querySelectorAll('.filter-dropdown.open').forEach(box => box.classList.remove('open'));
+  });
+  render();
+})();
+</script>
+</body></html>

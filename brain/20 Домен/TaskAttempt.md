@@ -15,7 +15,7 @@ tags: [тип/сущность, роль/ученик, роль/репетито
 | поле | смысл |
 |---|---|
 | `task_id`, `student_id` | что и кто |
-| `context` | `lesson` · `homework` · `mock` |
+| `context` | `lesson` · `homework` · `mock` · `practice` |
 | `lesson_id` / `assignment_id` | откуда пришла |
 | `code` | черновик в редакторе, его видит репетитор |
 | `answer`, `tries`, `is_correct` | результат |

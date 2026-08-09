@@ -116,7 +116,36 @@ test('API v1 provides screen DTO, pagination, ETag and Problem Details', async (
   assert.notEqual(secondPage.body.items[0].id, firstPage.body.items[0].id);
 
   const screen = await tutor.get('/api/v1/screens/bank');
+  const taskView = await tutor.get('/api/v1/screens/task-view');
   const legacy = await tutor.get('/api/state');
+  assert.equal(taskView.status, 200);
+  assert.equal(taskView.body.screen, 'task-view');
+  const taskNumber = await tutor.get('/api/v1/screens/task-number');
+  assert.equal(taskNumber.status, 200);
+  assert.equal(taskNumber.body.screen, 'task-number');
+  assert.ok(taskNumber.body.state.tasks.every(task => !Object.hasOwn(task, 'answer')));
+  assert.equal(taskView.body.state.tasks.some(item => Object.hasOwn(item, 'answer')), false);
   assert.ok(Buffer.byteLength(JSON.stringify(screen.body.state)) < Buffer.byteLength(JSON.stringify(legacy.body)));
   assert.equal(screen.body.state.tasks.some(item => Object.hasOwn(item, 'answer')), false);
+
+  const student = request.agent(app);
+  const studentRegistration = await student.post('/api/v1/auth/register').send({
+    name:'API V1 Ученик', email:'api-v1-student@example.test', password:'test-password', role:'student',
+  });
+  assert.equal(studentRegistration.status, 200);
+  const studentBank = await student.get('/api/v1/screens/student-bank');
+  assert.equal(studentBank.status, 200);
+  assert.equal(studentBank.body.state.tasks.some(item => Object.hasOwn(item, 'answer')), false);
+  const practice = await student.post(`/api/v1/practice/${firstPage.body.items[0].id}`).send({});
+  assert.equal(practice.status, 200);
+  assert.equal(typeof practice.body.attemptId, 'string');
+  assert.ok(practice.body.attemptId.length > 10);
+  const practiceTask = await app.locals.repository.taskWithAnswer(firstPage.body.items[0].id);
+  const checkedPractice = await student.post(`/api/v1/attempts/${practice.body.attemptId}/answer`)
+    .send({ answer:practiceTask.answer, activeSeconds:1 });
+  assert.equal(checkedPractice.status, 200);
+  assert.equal(checkedPractice.body.correct, true);
+  const repeatedPractice = await student.post(`/api/v1/practice/${firstPage.body.items[0].id}`).send({});
+  assert.equal(repeatedPractice.status, 200);
+  assert.notEqual(repeatedPractice.body.attemptId, practice.body.attemptId);
 });

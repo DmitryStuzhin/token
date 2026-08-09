@@ -28,8 +28,8 @@ const partsInf = [
 const partsMath = [
   [1,1,'m-plan'],[2,1,'m-vect'],[3,1,'m-prob'],[4,1,'m-prob'],[5,1,'m-stereo'],
   [6,1,'m-func'],[7,1,'m-func'],[8,1,'m-func'],[9,1,'m-text'],[10,1,'m-text'],
-  [11,1,'m-func'],[12,2,'m-trig'],[13,2,'m-stereo'],[14,2,'m-ineq'],
-  [15,2,'m-text'],[16,4,'m-plan'],[17,4,'m-param'],[18,5,'m-theory'],
+  [11,1,'m-func'],[12,1,'m-func'],[13,2,'m-trig'],[14,3,'m-stereo'],
+  [15,2,'m-ineq'],[16,2,'m-text'],[17,3,'m-plan'],[18,4,'m-param'],[19,4,'m-theory'],
 ];
 const mkParts = rows => rows.map(([number, maxPoints, topicId]) => ({ number, maxPoints, topicId }));
 
@@ -266,6 +266,9 @@ function generateTasks() {
           answer: manual ? '' : g.answer,
           answerType: g.type, compare: g.compare, tolerance: g.tol || 0,
           autoCheck: !manual, difficulty: g.diff || 2, source: 'generated',
+          taskType:subj.id === 'inf' && [6,12,14,16,17,19,20,21,23,24,25,26,27].includes(part.number)
+            ? 'programming' : 'answer',
+          attachments:[],
         });
       }
     });
@@ -281,5 +284,6 @@ return { subjects, topics, generateTasks, taskShape: {
   topicId:'тема', title:'заголовок', statement:'условие', answer:'эталон',
   answerType:'number|string|set', compare:'exact|ci|set|numeric',
   autoCheck:'true|false', difficulty:'1..3', source:'откуда',
+  taskType:'answer|programming|files', attachments:'[{name,url,kind}]',
 } };
 });

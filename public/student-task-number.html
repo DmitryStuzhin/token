@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Практика по номеру — Token</title><link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<script src="/api/v1/screens/student-task-number.js"></script><script src="/shared/core.js"></script>
+<script src="/assets/store.js"></script><script src="/assets/api.js"></script>
+<script src="/assets/auth.js"></script><script src="/assets/ui.js"></script>
+<script>
+(function () {
+  const ses = Auth.require('student'); if (!ses) return;
+  const C = Core; const S = ses.studentId; const q = new URLSearchParams(location.search);
+  const subject = C.subject(q.get('subject')); const number = Number(q.get('number'));
+  const part = subject && subject.exam.parts.find(p => p.number === number);
+  if (!subject || !part) {
+    UI.page({session:ses,active:'practice',head:{title:'Номер не найден'},body:`<section class="card">${UI.empty('Такого номера нет','<a href="student-bank.html">Вернуться в банк</a>')}</section>`});
+    return;
+  }
+  const tasks = C.db.tasks.filter(t => t.subjectId === subject.id && t.number === number);
+  const rows = tasks.map((t, i) => {
+    const a = C.attemptFor(S, t.id, {context:'practice'}); const done = a && a.status === 'checked' && a.isCorrect;
+    const label = done ? 'Решить ещё раз' : a ? 'Продолжить' : 'Решать';
+    return `<tr><td class="num">${i + 1}</td><td><b>${UI.esc(t.title)}</b><div class="muted small">${UI.esc((C.topic(t.topicId)||{}).name||'')} · сложность ${UI.difficultyHTML(t.difficulty)}</div></td>
+      <td>${t.autoCheck ? '<span class="badge b-green">автопроверка</span>' : '<span class="badge b-amber">ручная проверка</span>'}</td>
+      <td class="num"><button class="btn ${done ? 'ghost' : ''} sm practice-start" data-task="${UI.esc(t.id)}">${label}</button></td></tr>`;
+  }).join('');
+  UI.page({session:ses,active:'practice',head:{title:`Задания №${number}`,sub:subject.name},body:`<section class="card">
+    <div class="head"><div><h2>${UI.subjectTag(subject)} Практика по заданию №${number}</h2><div class="hint">Решайте задачи по порядку или выберите любую.</div></div><a class="btn ghost sm" href="/student-bank.html">← К номерам</a></div>
+    ${tasks.length ? `<table><thead><tr><th class="num">#</th><th>Задача</th><th>Проверка</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Для этого номера пока нет задач.</div>'}
+  </section>`});
+  document.querySelectorAll('.practice-start').forEach(btn => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try { const res = await Api.startPractice(btn.dataset.task); location.href = `/task.html?task=${encodeURIComponent(btn.dataset.task)}&practice=1&attempt=${encodeURIComponent(res.attemptId)}`; }
+    catch (e) { btn.disabled = false; alert(e.message); }
+  }));
+  window.addEventListener('pageshow', () => {
+    document.querySelectorAll('.practice-start').forEach(btn => { btn.disabled = false; });
+  });
+})();
+</script>
+</body></html>

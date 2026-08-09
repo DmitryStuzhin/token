@@ -116,6 +116,16 @@ router.post('/tasks/import', A.requireRole('tutor'), asyncRoute(async (req, res)
     if (t.id) seen.add(t.id);
     if (t.compare && !['exact','ci','set','numeric'].includes(t.compare))
       errors.push(`[${i}] compare должен быть exact | ci | set | numeric`);
+    if (t.taskType && !['answer','programming','files'].includes(t.taskType))
+      errors.push(`[${i}] taskType должен быть answer | programming | files`);
+    if (t.attachments != null && !Array.isArray(t.attachments))
+      errors.push(`[${i}] attachments должен быть массивом`);
+    if (Array.isArray(t.attachments)) t.attachments.forEach((file, j) => {
+      if (!file || typeof file.name !== 'string' || typeof file.url !== 'string')
+        errors.push(`[${i}].attachments[${j}] нужны name и url`);
+      else if (!/^https?:\/\//i.test(file.url) && !file.url.startsWith('/'))
+        errors.push(`[${i}].attachments[${j}] url должен быть https:// или локальным путём /…`);
+    });
   });
   const existing = await Promise.all(arr.map(t => t.id ? repository(req).taskExists(String(t.id)) : false));
   existing.forEach((found, i) => {
@@ -384,6 +394,15 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
 }));
 
 /* ── попытки ─────────────────────────────────────────────────────── */
+router.post('/practice/:taskId', A.requireRole('student'), asyncRoute(async (req, res) => {
+  const task = await repository(req).findTask(req.params.taskId);
+  if (!task) return res.status(404).json({ error:'Задача не найдена' });
+  const attempt = await ensureAttempt(req, req.studentId, req.params.taskId,
+    { context:'practice', newIfClosed:true });
+  if (!attempt) return res.status(404).json({ error:'Задача не найдена' });
+  res.json({ ok:true, attemptId:attempt.id });
+}));
+
 async function ownAttempt(req, res) {
   const a = await repository(req).findAttempt(req.params.id);
   if (!a) { res.status(404).json({ error:'Попытка не найдена' }); return null; }

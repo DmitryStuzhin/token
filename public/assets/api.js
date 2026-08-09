@@ -67,7 +67,12 @@ window.Api = (function () {
 
     /* задания и работы */
     createAssignment: data => post('/assignments', data),
+    startPractice: taskId => post('/practice/' + encodeURIComponent(taskId)),
     progress: (id, code, activeSeconds) => post('/attempts/' + id + '/progress', { code, activeSeconds }),
+    progressOnExit: (id, code, activeSeconds) => fetch('/api/v1/attempts/' + encodeURIComponent(id) + '/progress', {
+      method:'POST', credentials:'same-origin', keepalive:true,
+      headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ code, activeSeconds }),
+    }),
     coach: (id, code) => post('/attempts/' + id + '/coach', { code }),
     answer: (id, answer, activeSeconds) => post('/attempts/' + id + '/answer', { answer, activeSeconds }),
     submit: (id, code, activeSeconds) => post('/attempts/' + id + '/submit', { code, activeSeconds }),
