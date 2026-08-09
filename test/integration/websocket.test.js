@@ -153,6 +153,24 @@ test('lesson room authorizes participants and delivers draft, coaching, laser an
     }),
   ]);
 
+  const liveStudentCode = waitForMessage(
+    tutorWs,
+    (message) => message.type === 'code_live' && message.attemptId === attempt.id,
+  );
+  studentWs.send(
+    JSON.stringify({ type: 'code_live', attemptId: attempt.id, code: 'typing-now', sequence: 1 }),
+  );
+  assert.equal((await liveStudentCode).code, 'typing-now');
+
+  const liveTutorCode = waitForMessage(
+    studentWs,
+    (message) => message.type === 'code_live' && message.attemptId === attempt.id,
+  );
+  tutorWs.send(
+    JSON.stringify({ type: 'code_live', attemptId: attempt.id, code: 'coach-now', sequence: 2 }),
+  );
+  assert.equal((await liveTutorCode).code, 'coach-now');
+
   const draftMessage = waitForMessage(
     tutorWs,
     (message) =>
@@ -196,22 +214,38 @@ test('lesson room authorizes participants and delivers draft, coaching, laser an
   assert.equal(coachedAttempt.tries, 0, 'coaching must not create answer tries');
   assert.equal(coachedAttempt.isCorrect, null, 'coaching must not change correctness');
 
-  const laserMessage = waitForMessage(studentWs, (message) => message.type === 'laser');
+  const laserStart = waitForMessage(studentWs, (message) => message.type === 'laser_start');
   tutorWs.send(
     JSON.stringify({
-      type: 'laser',
+      type: 'laser_start',
+      strokeId: 'stroke-1',
       studentId: coachedAttempt.studentId,
       taskId: taskItem.id,
-      points: [
-        { x: 0.1, y: 0.2 },
-        { x: 0.5, y: 0.7 },
-      ],
+      points: [{ x: 0.1, y: 0.2 }],
     }),
   );
-  assert.deepEqual((await laserMessage).points, [
-    { x: 0.1, y: 0.2 },
-    { x: 0.5, y: 0.7 },
-  ]);
+  assert.deepEqual((await laserStart).points, [{ x: 0.1, y: 0.2 }]);
+  const laserPoints = waitForMessage(studentWs, (message) => message.type === 'laser_points');
+  tutorWs.send(
+    JSON.stringify({ type: 'laser_points', strokeId: 'stroke-1', points: [{ x: 0.5, y: 0.7 }] }),
+  );
+  assert.deepEqual((await laserPoints).points, [{ x: 0.5, y: 0.7 }]);
+  const laserEnd = waitForMessage(studentWs, (message) => message.type === 'laser_end');
+  tutorWs.send(JSON.stringify({ type: 'laser_end', strokeId: 'stroke-1' }));
+  assert.equal((await laserEnd).strokeId, 'stroke-1');
+
+  const secondTask = tasks.body.find((item) => item.id !== taskItem.id);
+  const invalidated = waitForMessage(
+    studentWs,
+    (message) => message.type === 'state_invalidated' && message.reason === 'tasks_changed',
+  );
+  assert.equal(
+    (
+      await tutor.post(`/api/lessons/${lesson.body.id}/tasks`).send({ taskId: secondTask.id })
+    ).status,
+    200,
+  );
+  assert.equal((await invalidated).lessonId, lesson.body.id);
 
   const hintMessage = waitForMessage(studentWs, (message) => message.type === 'hint');
   tutorWs.send(

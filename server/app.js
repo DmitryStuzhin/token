@@ -18,7 +18,7 @@ function createApp(options = {}) {
   app.disable('x-powered-by');
   app.locals.config = config;
   app.locals.logger = logger;
-  app.locals.live = options.live || { push() {}, presence() {} };
+  app.locals.live = options.live || { push() {}, presence() {}, invalidate() {} };
   app.locals.services = options.services || createContainer(config);
   app.locals.auth = options.auth || A.createAuthService(config, app.locals.services.pool);
   if (options.repository) {

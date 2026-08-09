@@ -146,6 +146,9 @@ function createCore(db) {
 
   const attemptDate = a => a.submittedAt || a.startedAt || null;
   const isDone = a => a.status === 'checked' || a.status === 'submitted';
+  /* Автопроверка фиксирует ошибку сразу, хотя задача остаётся открытой для
+     следующей попытки. Ручная работа становится оценённой только после проверки. */
+  const isEvaluated = a => a.isCorrect !== null && (isDone(a) || (a.tries || 0) > 0);
 
   /* ── домашние задания ────────────────────────────────────────── */
   function assignmentsOf(sid, subjectId) {
@@ -219,7 +222,7 @@ function createCore(db) {
     const map = new Map();
     attemptsOf(sid, subjectId).forEach(a => {
       const dt = attemptDate(a);
-      if (!dt || !isDone(a)) return;
+      if (!dt || !isEvaluated(a)) return;
       const k = dayKey(dt);
       const cur = map.get(k) || { solved: 0, seconds: 0 };
       cur.solved += 1; cur.seconds += a.activeSeconds || 0;
@@ -250,7 +253,7 @@ function createCore(db) {
     const now = Date.now();
     const acc = new Map();
     attemptsOf(sid, subjectId).forEach(a => {
-      if (a.isCorrect === null || !isDone(a)) return;
+      if (!isEvaluated(a)) return;
       const t = task(a.taskId); if (!t) return;
       const dt = new Date(attemptDate(a)).getTime();
       const cur = acc.get(t.topicId) || { n:0, ok:0, n30:0, ok30:0, nPrev:0, okPrev:0, seconds:0 };
@@ -281,7 +284,7 @@ function createCore(db) {
     const from = days ? Date.now() - days * DAY : 0;
     const acc = new Map();
     attemptsOf(sid, subjectId).forEach(a => {
-      if (!isDone(a) || a.isCorrect === null) return;
+      if (!isEvaluated(a)) return;
       const dt = attemptDate(a); if (!dt || new Date(dt).getTime() < from) return;
       const t = task(a.taskId); if (!t) return;
       const key = t.subjectId + ':' + t.number;
@@ -367,7 +370,7 @@ function createCore(db) {
 
   function kpi(sid, subjectId) {
     const week = dailyActivity(sid, 7, subjectId);
-    const done = attemptsOf(sid, subjectId).filter(a => isDone(a) && a.isCorrect !== null);
+    const done = attemptsOf(sid, subjectId).filter(isEvaluated);
     const correct = done.filter(a => a.isCorrect).length;
     const asg = assignmentsOf(sid, subjectId);
     const series = mockSeries(sid, subjectId);
@@ -545,7 +548,7 @@ function createCore(db) {
     studentUser, tutorUser, enrollmentsOf, groupsOf, membersOf, groupsOfTutor,
     subjectsOf, studentsOfTutor, tutorOf, childrenOf, goalOf, subscriptionOf,
     lessonsOf, lessonsOfGroup, nextLesson, lessonIsLive, studentsOfLesson, isGroupLesson, attendanceOf,
-    attemptsOf, attemptsOfAssignment, attemptsOfLesson, attemptFor, attemptDate, isDone,
+    attemptsOf, attemptsOfAssignment, attemptsOfLesson, attemptFor, attemptDate, isDone, isEvaluated,
     assignmentsOf, decorateAssignment, ASSIGNMENT_STATUS,
     checkAnswer, dailyActivity, streak, topicMastery, taskNumberStats,
     attendance, mockSeries, kpi, goalProgress, upcoming, reviewQueue, tutorToday, groupStats,

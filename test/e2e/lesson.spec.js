@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { fixture, withUniqueEmail } = require('../fixtures/scenario.js');
+const { createCore } = require('../../shared/core.js');
 
 const key = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 async function post(request, path, data) {
@@ -51,6 +52,7 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
     await tutorContext.request.get('/api/v1/tasks?subject=inf&limit=100')
   ).json();
   const task = tasks.items.find((item) => item.autoCheck);
+  const secondTask = tasks.items.find((item) => item.id !== task.id);
   expect(
     (
       await post(tutorContext.request, `/api/v1/lessons/${lesson.id}/tasks`, { taskId: task.id })
@@ -73,8 +75,41 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   const attemptBefore = studentStateBefore.state.attempts.find(
     (item) => item.lessonId === lesson.id && item.taskId === task.id,
   );
+  await studentPage.locator('.code-input').fill('print("student live")');
+  await expect(tutorPage.locator('.code-input')).toHaveValue('print("student live")', {
+    timeout: 1_500,
+  });
   await tutorPage.locator('.code-input').fill('print(40 + 2)');
-  await expect(studentPage.locator('.code-input')).toHaveValue('print(40 + 2)', { timeout: 5_000 });
+  await expect(studentPage.locator('.code-input')).toHaveValue('print(40 + 2)', { timeout: 1_500 });
+
+  expect(
+    (
+      await post(tutorContext.request, `/api/v1/lessons/${lesson.id}/tasks`, {
+        taskId: secondTask.id,
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await expect(studentPage.locator('.task-row')).toHaveCount(2, { timeout: 2_000 });
+  await expect(studentPage.locator('.task-row')).toContainText([task.title, secondTask.title]);
+
+  await studentPage.locator('.answer-input').fill('__заведомо_неверный_ответ__');
+  await studentPage.getByRole('button', { name: 'Проверить ответ' }).click();
+  await expect(studentPage.locator('.editor-status')).toContainText('Неверно');
+  const statsAfterError = await (
+    await studentContext.request.get('/api/v1/screens/stats')
+  ).json();
+  expect(createCore(statsAfterError.state).kpi(enrollment.studentId, 'inf').accuracy).toBe(0);
+  const attemptAfterError = statsAfterError.state.attempts.find((item) => item.id === attemptBefore.id);
+
+  await tutorPage.getByRole('button', { name: 'Выдать Д/З' }).click();
+  await expect(tutorPage.locator('#homework-form')).toBeVisible();
+  await tutorPage.locator('#homework-form input[name="title"]').fill('Д/З по текущему занятию');
+  await tutorPage.locator('#homework-form button[type="submit"]').click();
+  await expect(tutorPage.locator('.lesson-card .form-success')).toContainText('Домашнее задание выдано');
+  const homework = await (
+    await studentContext.request.get('/api/v1/screens/homework')
+  ).json();
+  expect(homework.state.assignments.some((item) => item.title === 'Д/З по текущему занятию')).toBe(true);
   await tutorPage.getByRole('button', { name: /Запустить/ }).click();
   // The status changes synchronously before the in-browser Python promise resolves.
   await expect(tutorPage.locator('.editor-status')).not.toContainText('Готово к запуску');
@@ -91,9 +126,15 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   const stage = await tutorPage.locator('.editor-stage').boundingBox();
   await tutorPage.mouse.move(stage.x + 80, stage.y + 70);
   await tutorPage.mouse.down();
-  await tutorPage.mouse.move(stage.x + 220, stage.y + 130, { steps: 8 });
-  await tutorPage.mouse.up();
+  await tutorPage.mouse.move(stage.x + 150, stage.y + 100, { steps: 4 });
   await expect(studentPage.locator('.laser-trail')).toHaveCount(1);
+  const partialLaser = await studentPage.locator('.laser-trail').getAttribute('points');
+  await tutorPage.mouse.move(stage.x + 220, stage.y + 130, { steps: 4 });
+  await expect
+    .poll(async () => (await studentPage.locator('.laser-trail').getAttribute('points')).length)
+    .toBeGreaterThan(partialLaser.length);
+  await tutorPage.mouse.up();
+  await expect(studentPage.locator('.laser-trail')).toHaveClass(/fade/);
 
   const studentStateAfter = await (
     await studentContext.request.get('/api/v1/screens/lesson')
@@ -101,9 +142,9 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   const attemptAfter = studentStateAfter.state.attempts.find(
     (item) => item.id === attemptBefore.id,
   );
-  expect(attemptAfter.activeSeconds).toBe(attemptBefore.activeSeconds);
-  expect(attemptAfter.tries).toBe(attemptBefore.tries);
-  expect(attemptAfter.isCorrect).toBe(attemptBefore.isCorrect);
+  expect(attemptAfter.activeSeconds).toBe(attemptAfterError.activeSeconds);
+  expect(attemptAfter.tries).toBe(attemptAfterError.tries);
+  expect(attemptAfter.isCorrect).toBe(attemptAfterError.isCorrect);
   await tutorPage.screenshot({ path: '/tmp/token-production-tutor.png', fullPage: true });
   await studentPage.screenshot({ path: '/tmp/token-production-student.png', fullPage: true });
   await studentPage.setViewportSize({ width: 390, height: 844 });
@@ -111,6 +152,18 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
     path: '/tmp/token-production-student-mobile.png',
     fullPage: true,
   });
+
+  tutorPage.once('dialog', (dialog) => dialog.accept());
+  await tutorPage.getByRole('button', { name: 'Завершить' }).click();
+  await expect(tutorPage).toHaveURL(/\/tutor\.html\?completed=/);
+  await tutorPage.goto('/lesson.html');
+  await expect(tutorPage.getByText('Занятий пока нет')).toBeVisible();
+  await expect(tutorPage.getByText('Тестовый Ученик')).toHaveCount(0);
+  await tutorPage.goto('/tutor.html');
+  await tutorPage.getByRole('button', { name: 'Назначить занятие' }).click();
+  await tutorPage.locator('#n-start').fill(new Date(Date.now() + 3_600_000).toISOString().slice(0, 16));
+  await tutorPage.getByRole('button', { name: 'Назначить', exact: true }).click();
+  await expect(tutorPage).toHaveURL(/\/lesson\.html\?lesson=/);
 
   const groupResponse = await post(tutorContext.request, '/api/v1/groups', fixture.group);
   const group = await groupResponse.json();

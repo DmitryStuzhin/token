@@ -2,13 +2,13 @@
   'use strict';
   const session = Auth.require(['tutor', 'student']);
   if (!session) return;
-  const C = Core;
+  let C = Core;
   const tutor = session.role === 'tutor';
   const esc = UI.esc;
 
   let lesson = UI.qs('lesson') ? C.lesson(UI.qs('lesson')) : null;
   if (!lesson && tutor) {
-    lesson = C.tutorToday(session.tutorId)[0] || C.db.lessons
+    lesson = C.tutorToday(session.tutorId).find(item => item.status === 'planned') || C.db.lessons
       .filter(item => item.tutorId === session.tutorId && item.status === 'planned')
       .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))[0] || null;
   }
@@ -20,9 +20,9 @@
     return;
   }
 
-  const subject = C.subject(lesson.subjectId);
-  const group = lesson.groupId ? C.group(lesson.groupId) : null;
-  const roster = C.studentsOfLesson(lesson);
+  let subject = C.subject(lesson.subjectId);
+  let group = lesson.groupId ? C.group(lesson.groupId) : null;
+  let roster = C.studentsOfLesson(lesson);
   let selectedStudent = tutor ? (UI.qs('student') || roster[0] || null) : session.studentId;
   let selectedTask = UI.qs('task') || (lesson.taskIds || [])[0] || null;
   let socket = null;
@@ -31,6 +31,15 @@
   let activityTimer = null;
   let activeSeconds = 0;
   let idleSeconds = 0;
+  let refreshTimer = null;
+  let refreshPromise = null;
+  let liveFrame = null;
+  let liveSequence = 0;
+  let socketEverOpened = false;
+  let homeworkNotice = '';
+  const remoteSequences = new Map();
+  const remoteCodeReceivedAt = new Map();
+  const remoteLaserStrokes = new Map();
   const activityEvents = ['keydown', 'mousemove', 'click', 'scroll', 'input'];
   const markActivity = () => { idleSeconds = 0; };
 
@@ -106,6 +115,12 @@
       <div class="small-kpi blue"><b>${C.fmtDurShort(seconds)}</b><small>активная работа</small></div></div>
       <p class="stat-truth">Считается по попыткам ученика; запуск кода, подсказки и правки преподавателя время не увеличивают.</p></section>`;
   }
+  function homeworkCard() {
+    if (!tutor) return '';
+    const target = group ? `группе «${esc(group.title)}»` : esc((userOf(selectedStudent) || {}).name || 'ученику');
+    return `<section class="lesson-card"><div class="card-head"><div><h2 class="micro-head">Домашнее задание</h2><p class="stat-truth">Выдать ${target} по материалам занятия.</p></div>
+      <button class="text-action" id="open-homework-form" ${(lesson.taskIds || []).length ? '' : 'disabled'}>Выдать Д/З</button></div>${homeworkNotice ? `<p class="form-success" aria-live="polite">${esc(homeworkNotice)}</p>` : ''}<div id="homework-form-slot"></div></section>`;
+  }
   function editor(task, attempt, options = {}) {
     if (!task || !attempt) return `<section class="lesson-card runtime-empty">Ученик ещё не открыл выбранное задание.</section>`;
     const closed = attempt.status === 'checked' || attempt.status === 'submitted';
@@ -135,7 +150,7 @@
     const task = taskOf(selectedTask); const attempt = attemptOf(); const student = userOf(selectedStudent);
     return `<div class="solo-layout"><div class="stack sticky">${taskList(selectedStudent)}</div>
       <div class="stack">${taskPanel(task)}${editor(task, attempt)}</div>
-      <div class="stack sticky"><section class="lesson-card student-identity"><span class="mini-avatar">${initials(student && student.name)}</span><div><strong>${esc(student && student.name || 'Ученик')}</strong><small>${esc(subject.name)}</small></div></section>${linksCard()}${summaryCard(selectedStudent)}</div></div>`;
+      <div class="stack sticky"><section class="lesson-card student-identity"><span class="mini-avatar">${initials(student && student.name)}</span><div><strong>${esc(student && student.name || 'Ученик')}</strong><small>${esc(subject.name)}</small></div></section>${linksCard()}${summaryCard(selectedStudent)}${homeworkCard()}</div></div>`;
   }
   function groupMetrics() {
     const attempts = C.attemptsOfLesson(lesson.id);
@@ -153,7 +168,7 @@
     }).join('');
     return `<div class="group-layout"><div class="stack"><div class="group-kpis"><div class="group-kpi blue"><b>${roster.length}</b><span>участников</span></div><div class="group-kpi green"><b>${metrics.solved}</b><span>решено задач</span></div><div class="group-kpi amber"><b>${metrics.waiting}</b><span>ждут проверки</span></div><div class="group-kpi red"><b>${metrics.stuck}</b><span>дольше 8 минут</span></div></div>
       <section class="lesson-card flush"><div class="card-head group-head"><h2 class="micro-head">Прогресс группы</h2><span class="tag">Статусы каждой попытки отдельно</span></div><div class="heat-wrap"><div class="heat-table runtime-heat" style="--task-count:${Math.max(1, (lesson.taskIds || []).length)}"><div class="heat-row head"><span></span><span>Ученик</span>${head}<span>Итог</span></div>${rows}</div></div></section></div>
-      <div class="stack sticky">${linksCard()}<section class="lesson-card"><h2 class="micro-head">Как открыть работу</h2><p class="stat-truth">Нажмите имя ученика или ячейку задачи — откроется полноразмерный экран с условием и живым кодом.</p></section></div></div>`;
+      <div class="stack sticky">${linksCard()}${homeworkCard()}<section class="lesson-card"><h2 class="micro-head">Как открыть работу</h2><p class="stat-truth">Нажмите имя ученика или ячейку задачи — откроется полноразмерный экран с условием и живым кодом.</p></section></div></div>`;
   }
   function studentView() {
     const task = taskOf(selectedTask); const attempt = attemptOf(session.studentId, selectedTask);
@@ -175,7 +190,7 @@
   }
   function render() {
     document.body.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
-    bindCommon(); bindEditor(document.querySelector('.interactive-editor')); connectLive();
+    bindCommon(); bindEditor(document.querySelector('.interactive-editor')); connectLive(); updateConnectionState();
   }
 
   function bindCommon() {
@@ -194,9 +209,17 @@
     }));
     document.getElementById('open-link-form')?.addEventListener('click', showLinkForm);
     document.getElementById('open-task-picker')?.addEventListener('click', showTaskPicker);
+    document.getElementById('open-homework-form')?.addEventListener('click', showHomeworkForm);
     document.getElementById('finish-lesson')?.addEventListener('click', async event => {
       if (!confirm('Завершить занятие? Посещаемость и списание будут записаны для каждого ученика.')) return;
-      await action(event.currentTarget, () => Api.setLessonStatus(lesson.id, 'done'), 'Не удалось завершить занятие');
+      const button = event.currentTarget; button.disabled = true; button.textContent = 'Завершаю…';
+      try {
+        await Api.setLessonStatus(lesson.id, 'done');
+        location.href = `/tutor.html?completed=${encodeURIComponent(lesson.id)}`;
+      } catch (error) {
+        button.disabled = false; button.textContent = 'Завершить';
+        alert(error.message || 'Не удалось завершить занятие');
+      }
     });
   }
   function renderWorkspace() {
@@ -206,7 +229,7 @@
   }
   async function action(button, operation, fallback) {
     button.disabled = true;
-    try { await operation(); location.reload(); }
+    try { await operation(); await refreshLessonState(); }
     catch (error) { button.disabled = false; alert(error.message || fallback); }
   }
   function showLinkForm() {
@@ -214,7 +237,7 @@
     slot.innerHTML = `<form class="runtime-form" id="link-form"><select name="type"><option value="call">Созвон</option><option value="board">Доска</option><option value="material">Материал</option></select><input name="url" type="url" required placeholder="https://…"><input name="label" maxlength="300" placeholder="Подпись"><button>Добавить</button><p class="form-error" aria-live="polite"></p></form>`;
     slot.querySelector('form').addEventListener('submit', async event => {
       event.preventDefault(); const form = event.currentTarget; const submit = form.querySelector('button'); submit.disabled = true;
-      try { await Api.addLink(lesson.id, Object.fromEntries(new FormData(form))); location.reload(); }
+      try { await Api.addLink(lesson.id, Object.fromEntries(new FormData(form))); await refreshLessonState(); }
       catch (error) { submit.disabled = false; form.querySelector('.form-error').textContent = error.message; }
     });
   }
@@ -223,6 +246,35 @@
     const pool = C.db.tasks.filter(task => task.subjectId === lesson.subjectId && !(lesson.taskIds || []).includes(task.id));
     slot.innerHTML = `<div class="runtime-picker">${pool.length ? pool.slice(0, 100).map(task => `<button data-pick-task="${esc(task.id)}"><b>№${task.number}</b><span>${esc(task.title)}</span></button>`).join('') : '<div class="runtime-empty">Все доступные задачи уже добавлены.</div>'}</div>`;
     slot.querySelectorAll('[data-pick-task]').forEach(button => button.addEventListener('click', async () => action(button, () => Api.attachTask(lesson.id, button.dataset.pickTask), 'Не удалось добавить задачу')));
+  }
+  function showHomeworkForm() {
+    const slot = document.getElementById('homework-form-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    const due = new Date(Date.now() + 7 * 86400000); due.setHours(23, 59, 0, 0);
+    const tasks = (lesson.taskIds || []).map(id => taskOf(id)).filter(Boolean);
+    slot.innerHTML = `<form class="runtime-form homework-form" id="homework-form">
+      <label><span>Название</span><input name="title" required maxlength="300" value="Д/З после занятия ${esc(C.fmtDate(lesson.startsAt))}"></label>
+      <label><span>Срок сдачи</span><input name="dueAt" type="datetime-local" required value="${UI.dtLocal(due)}"></label>
+      <fieldset><legend>Задачи</legend>${tasks.map(task => `<label class="homework-task"><input type="checkbox" name="taskId" value="${esc(task.id)}" checked><span>№${task.number} · ${esc(task.title)}</span></label>`).join('')}</fieldset>
+      <button type="submit">Выдать Д/З</button><p class="form-success" aria-live="polite"></p><p class="form-error" aria-live="assertive"></p></form>`;
+    slot.querySelector('form').addEventListener('submit', async event => {
+      event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type="submit"]');
+      const taskIds = [...form.querySelectorAll('[name="taskId"]:checked')].map(input => input.value);
+      const errorNode = form.querySelector('.form-error'); const successNode = form.querySelector('.form-success');
+      errorNode.textContent = ''; successNode.textContent = '';
+      if (!taskIds.length) { errorNode.textContent = 'Выберите хотя бы одну задачу.'; return; }
+      button.disabled = true; button.textContent = 'Выдаю…';
+      const data = { title:form.elements.title.value.trim(), dueAt:new Date(form.elements.dueAt.value).toISOString(), taskIds, lessonId:lesson.id };
+      if (group) data.groupId = group.id; else data.enrollmentId = lesson.enrollmentId;
+      try {
+        await Api.createAssignment(data);
+        homeworkNotice = `Домашнее задание выдано: ${taskIds.length} ${C.plural(taskIds.length, 'задача', 'задачи', 'задач')}.`;
+        successNode.textContent = homeworkNotice; button.textContent = 'Выдано';
+        renderWorkspace();
+      } catch (error) {
+        button.disabled = false; button.textContent = 'Выдать Д/З'; errorNode.textContent = error.message;
+      }
+    });
   }
 
   function bindEditor(root) {
@@ -234,6 +286,7 @@
     textarea.addEventListener('keydown', event => editorKeys(textarea, event, root));
     textarea.addEventListener('input', () => {
       highlighter.innerHTML = highlight(textarea.value); idleSeconds = 0;
+      queueLiveCode(root, textarea.value);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async () => {
         try {
@@ -241,7 +294,7 @@
           else await Api.progress(root.dataset.attempt, textarea.value, activeSeconds);
           setStatus(root, 'ok', tutor ? 'Изменение отправлено ученику' : 'Черновик сохранён');
         } catch (error) { setStatus(root, 'error', error.message); }
-      }, 600);
+      }, 250);
     });
     root.querySelector('.run-code').addEventListener('click', () => runPython(root));
     if (tutor) {
@@ -299,12 +352,41 @@
     catch (error) { button.disabled = false; setStatus(root, 'error', error.message); }
   }
   function bindLaser(root) {
-    const button = root.querySelector('.laser-button'); const layer = root.querySelector('.laser-layer'); let points = []; let path = null;
+    const button = root.querySelector('.laser-button'); const layer = root.querySelector('.laser-layer');
+    let points = []; let pending = []; let path = null; let strokeId = null; let laserFrame = null;
     button.addEventListener('click', () => { button.classList.toggle('active'); root.classList.toggle('laser-active', button.classList.contains('active')); });
     const normalized = event => { const rect = layer.getBoundingClientRect(); return { x:Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y:Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) }; };
-    layer.addEventListener('pointerdown', event => { if (!button.classList.contains('active')) return; points = [normalized(event)]; path = createTrail(layer, points); layer.setPointerCapture(event.pointerId); });
-    layer.addEventListener('pointermove', event => { if (!path || !layer.hasPointerCapture(event.pointerId)) return; points.push(normalized(event)); paintTrail(path, points); });
-    layer.addEventListener('pointerup', event => { if (!path) return; try { layer.releasePointerCapture(event.pointerId); } catch (_) {} const sent = points.slice(0, 256); fadeTrail(path); path = null; if (sent.length > 1) send({ type:'laser', studentId:root.dataset.student, taskId:root.dataset.task, points:sent }); });
+    const flush = () => {
+      laserFrame = null;
+      if (!strokeId || !pending.length) return;
+      const batch = pending.splice(0, 48);
+      send({ type:'laser_points', strokeId, points:batch });
+      if (pending.length) laserFrame = requestAnimationFrame(flush);
+    };
+    layer.addEventListener('pointerdown', event => {
+      if (!button.classList.contains('active')) return;
+      const first = normalized(event);
+      points = [first]; pending = []; strokeId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      path = createTrail(layer, points); layer.setPointerCapture(event.pointerId);
+      send({ type:'laser_start', strokeId, studentId:root.dataset.student, taskId:root.dataset.task, points:[first] });
+    });
+    layer.addEventListener('pointermove', event => {
+      if (!path || !layer.hasPointerCapture(event.pointerId)) return;
+      const events = event.getCoalescedEvents ? event.getCoalescedEvents() : [event];
+      const fresh = events.map(normalized);
+      points.push(...fresh); pending.push(...fresh); paintTrail(path, points);
+      if (!laserFrame) laserFrame = requestAnimationFrame(flush);
+    });
+    const finish = event => {
+      if (!path || !strokeId) return;
+      try { layer.releasePointerCapture(event.pointerId); } catch (_) {}
+      if (laserFrame) { cancelAnimationFrame(laserFrame); laserFrame = null; }
+      while (pending.length) send({ type:'laser_points', strokeId, points:pending.splice(0, 48) });
+      send({ type:'laser_end', strokeId }); fadeTrail(path);
+      path = null; strokeId = null; points = [];
+    };
+    layer.addEventListener('pointerup', finish);
+    layer.addEventListener('pointercancel', finish);
   }
   function createTrail(layer, points) { const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); path.classList.add('laser-trail'); layer.append(path); paintTrail(path, points); return path; }
   function paintTrail(path, points) { const layer = path.ownerSVGElement; const rect = layer.getBoundingClientRect(); path.setAttribute('points', points.map(point => `${point.x * rect.width},${point.y * rect.height}`).join(' ')); }
@@ -318,7 +400,21 @@
   }
   function drawRemoteLaser(message) {
     if (message.taskId !== selectedTask) return;
-    const layer = document.querySelector('.interactive-editor .laser-layer'); if (!layer) return; const path = createTrail(layer, message.points); fadeTrail(path);
+    const layer = document.querySelector('.interactive-editor .laser-layer'); if (!layer) return;
+    if (message.type === 'laser_start') {
+      const points = (message.points || []).slice();
+      remoteLaserStrokes.set(message.strokeId, { points, path:createTrail(layer, points) });
+      return;
+    }
+    const stroke = remoteLaserStrokes.get(message.strokeId);
+    if (!stroke) return;
+    if (message.type === 'laser_points') {
+      stroke.points.push(...(message.points || []));
+      paintTrail(stroke.path, stroke.points);
+    } else if (message.type === 'laser_end') {
+      fadeTrail(stroke.path);
+      remoteLaserStrokes.delete(message.strokeId);
+    }
   }
   function receiveHint(message) {
     if (message.taskId !== selectedTask) return;
@@ -336,19 +432,93 @@
     if (socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(socket.readyState)) return;
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/live?lesson=${encodeURIComponent(lesson.id)}`;
     try { socket = new WebSocket(url); } catch (_) { return retrySocket(); }
-    socket.onopen = () => { socketReady = true; const state = document.getElementById('connection-state'); if (state) { state.textContent = 'в сети'; state.classList.add('online'); } };
+    socket.onopen = () => {
+      socketReady = true; updateConnectionState();
+      if (socketEverOpened) scheduleStateRefresh();
+      socketEverOpened = true;
+    };
     socket.onmessage = event => { let message; try { message = JSON.parse(event.data); } catch (_) { return; }
-      if (message.type === 'snapshot') receiveSnapshot(message); if (!tutor && message.type === 'laser') drawRemoteLaser(message); if (!tutor && message.type === 'hint') receiveHint(message); };
-    socket.onclose = () => { socketReady = false; const state = document.getElementById('connection-state'); if (state) { state.textContent = 'переподключение…'; state.classList.remove('online'); } retrySocket(); };
+      if (message.type === 'snapshot') receiveSnapshot(message);
+      if (message.type === 'code_live') receiveLiveCode(message);
+      if (message.type === 'state_invalidated') scheduleStateRefresh();
+      if (!tutor && ['laser_start','laser_points','laser_end'].includes(message.type)) drawRemoteLaser(message);
+      if (!tutor && message.type === 'hint') receiveHint(message);
+    };
+    socket.onclose = () => { socketReady = false; updateConnectionState(); retrySocket(); };
     socket.onerror = () => { try { socket.close(); } catch (_) {} };
   }
   function retrySocket() { setTimeout(connectLive, 3000); }
-  function send(message) { if (socketReady) socket.send(JSON.stringify(message)); else alert('Живой канал переподключается. Повторите через несколько секунд.'); }
+  function send(message, notify = false) {
+    if (socketReady) { socket.send(JSON.stringify(message)); return true; }
+    if (notify) alert('Живой канал переподключается. Повторите через несколько секунд.');
+    return false;
+  }
+  function updateConnectionState() {
+    const state = document.getElementById('connection-state');
+    if (!state) return;
+    state.textContent = socketReady ? 'в сети' : 'переподключение…';
+    state.classList.toggle('online', socketReady);
+  }
+  function queueLiveCode(root, code) {
+    const sequence = ++liveSequence;
+    if (liveFrame) cancelAnimationFrame(liveFrame);
+    liveFrame = requestAnimationFrame(() => {
+      liveFrame = null;
+      send({ type:'code_live', attemptId:root.dataset.attempt, code, sequence });
+    });
+  }
+  function receiveLiveCode(message) {
+    const previous = remoteSequences.get(message.attemptId) || -1;
+    if (message.sequence < previous) return;
+    remoteSequences.set(message.attemptId, message.sequence);
+    remoteCodeReceivedAt.set(message.attemptId, performance.now());
+    const current = C.db.attempts.find(item => item.id === message.attemptId);
+    if (current) current.code = message.code || '';
+    const root = document.querySelector(`.interactive-editor[data-attempt="${CSS.escape(message.attemptId)}"]`);
+    if (!root) return;
+    const textarea = root.querySelector('.code-input');
+    if (textarea.value === (message.code || '')) return;
+    const start = textarea.selectionStart; const end = textarea.selectionEnd;
+    textarea.value = message.code || '';
+    textarea.setSelectionRange(Math.min(start, textarea.value.length), Math.min(end, textarea.value.length));
+    root.querySelector('.code-highlight').innerHTML = highlight(textarea.value);
+    setStatus(root, 'ok', tutor ? 'Ученик печатает…' : 'Преподаватель редактирует код…');
+  }
+  function scheduleStateRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { void refreshLessonState(); }, 50);
+  }
+  async function refreshLessonState() {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = Store.refresh().then(() => {
+      C = window.Core;
+      lesson = C.lesson(lesson.id);
+      if (!lesson) { location.reload(); return; }
+      subject = C.subject(lesson.subjectId);
+      group = lesson.groupId ? C.group(lesson.groupId) : null;
+      roster = C.studentsOfLesson(lesson);
+      if (tutor && !roster.includes(selectedStudent)) selectedStudent = roster[0] || null;
+      if (!(lesson.taskIds || []).includes(selectedTask)) selectedTask = (lesson.taskIds || [])[0] || null;
+      render();
+    }).catch(error => {
+      const state = document.getElementById('connection-state');
+      if (state) state.textContent = error.message || 'не удалось обновить';
+    }).finally(() => { refreshPromise = null; });
+    return refreshPromise;
+  }
   function receiveSnapshot(message) {
-    (message.attempts || []).forEach(fresh => { const current = C.db.attempts.find(item => item.id === fresh.id); if (current) Object.assign(current, fresh); });
+    (message.attempts || []).forEach(fresh => {
+      const current = C.db.attempts.find(item => item.id === fresh.id);
+      if (!current) return;
+      const liveIsNewer = performance.now() - (remoteCodeReceivedAt.get(fresh.id) || -Infinity) < 1000;
+      const liveCode = current.code;
+      Object.assign(current, fresh);
+      if (liveIsNewer && liveCode !== fresh.code) current.code = liveCode;
+    });
     const root = document.querySelector(`.interactive-editor[data-student="${CSS.escape(message.studentId)}"]`); if (!root) return;
     const fresh = (message.attempts || []).find(item => item.taskId === root.dataset.task); const textarea = root.querySelector('.code-input');
-    if (fresh && document.activeElement !== textarea && textarea.value !== (fresh.code || '')) { textarea.value = fresh.code || ''; root.querySelector('.code-highlight').innerHTML = highlight(textarea.value); setStatus(root, 'ok', tutor ? 'Получен свежий черновик ученика' : 'Преподаватель обновил код'); }
+    const liveIsNewer = fresh && performance.now() - (remoteCodeReceivedAt.get(fresh.id) || -Infinity) < 1000;
+    if (fresh && !liveIsNewer && document.activeElement !== textarea && textarea.value !== (fresh.code || '')) { textarea.value = fresh.code || ''; root.querySelector('.code-highlight').innerHTML = highlight(textarea.value); setStatus(root, 'ok', tutor ? 'Получен свежий черновик ученика' : 'Преподаватель обновил код'); }
   }
 
   render();
