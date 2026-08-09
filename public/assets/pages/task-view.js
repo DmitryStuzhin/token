@@ -1,0 +1,82 @@
+(function () {
+  const ses = Auth.require(['student', 'tutor']);
+  if (!ses) return;
+  const C = Core;
+  const taskId = UI.qs('task');
+  const task = C.task(taskId);
+  const isTutor = ses.role === 'tutor';
+
+  if (!task) {
+    UI.page({ session:ses, active:isTutor ? 'bank' : 'hw',
+      head:{ title:'Задача не найдена' },
+      body:`<section class="card">${UI.empty('Нет такой задачи в банке',
+        `<a href="${isTutor ? '/bank.html' : '/homework.html'}">Вернуться к списку</a>`)}</section>` });
+    return;
+  }
+
+  const subject = C.subject(task.subjectId);
+  const topic = C.topic(task.topicId);
+  const contexts = [];
+  let solveHref = null;
+
+  if (!isTutor) {
+    C.db.assignments.forEach(assignment => {
+      if (!assignment.taskIds.includes(task.id)) return;
+      const attempt = C.attemptFor(ses.studentId, task.id, { assignmentId:assignment.id });
+      if (!attempt) return;
+      contexts.push({ label:assignment.title, href:`/task.html?task=${encodeURIComponent(task.id)}&assignment=${encodeURIComponent(assignment.id)}` });
+    });
+    C.db.lessons.forEach(lesson => {
+      if (!(lesson.taskIds || []).includes(task.id)) return;
+      const attempt = C.attemptFor(ses.studentId, task.id, { lessonId:lesson.id });
+      if (!attempt) return;
+      contexts.push({ label:`Занятие ${C.fmtDate(lesson.startsAt)}`, href:`/task.html?task=${encodeURIComponent(task.id)}&lesson=${encodeURIComponent(lesson.id)}` });
+    });
+    solveHref = contexts[0] ? contexts[0].href : null;
+  }
+
+  const meta = [
+    subject ? subject.name : task.subjectId,
+    topic ? topic.name : null,
+  ].filter(Boolean).map(UI.esc).join(' · ') +
+    ` · сложность ${UI.difficultyHTML(task.difficulty)} · ` +
+    UI.esc(task.autoCheck ? 'автопроверка' : 'проверяет репетитор');
+
+  const contextHTML = !isTutor && contexts.length ? `<section class="card">
+    <div class="head"><h2>Где вам выдана эта задача</h2></div>
+    <div class="row-list">${contexts.map(item => `<a class="row" href="${item.href}">
+      <span class="grow"><span class="t">${UI.esc(item.label)}</span></span><span class="r">решать →</span>
+    </a>`).join('')}</div></section>` : '';
+
+  const actions = isTutor
+    ? `<a class="btn ghost" href="/bank.html">← к банку задач</a>`
+    : solveHref
+      ? `<a class="btn" href="${solveHref}">Перейти к решению</a>
+         <a class="btn ghost" href="/homework.html">← к домашним заданиям</a>`
+      : `<a class="btn ghost" href="/homework.html">← к домашним заданиям</a>`;
+
+  UI.page({ session:ses, active:isTutor ? 'bank' : 'hw',
+    head:{ title:`Задание №${task.number}`, sub:UI.esc(task.title) },
+    body:`<div class="cols c2w">
+      <div class="stack">
+        <section class="card">
+          <div class="head"><div><h2>${UI.esc(task.title)}</h2><div class="hint">${meta}</div></div>
+            ${UI.subjectTag(subject)}</div>
+          <div class="task-view-statement">${UI.esc(task.statement)}</div>
+        </section>
+        ${contextHTML}
+      </div>
+      <aside class="stack">
+        <section class="card">
+          <div class="head"><h2>О задаче</h2></div>
+          <div class="field"><div class="k">Предмет</div><div class="v">${UI.esc(subject ? subject.name : '—')}</div></div>
+          <div class="field"><div class="k">Номер</div><div class="v">№${task.number}</div></div>
+          <div class="field"><div class="k">Тема</div><div class="v">${UI.esc(topic ? topic.name : 'Не указана')}</div></div>
+          <div class="field"><div class="k">Проверка</div><div class="v">${task.autoCheck ? 'Автоматическая' : 'Репетитором'}</div></div>
+          <div class="field field-last"><div class="k">Источник</div><div class="v">${UI.esc(task.source || 'Банк Token')}</div></div>
+        </section>
+        ${!isTutor && !solveHref ? `<div class="note n-grey">Просмотр доступен, но решать задачу можно после того, как репетитор прикрепит её к занятию или домашнему заданию.</div>` : ''}
+        <div class="task-view-actions">${actions}</div>
+      </aside>
+    </div>` });
+})();

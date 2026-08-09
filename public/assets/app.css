@@ -107,6 +107,16 @@ h2{font-size:15px;font-weight:700}
 .task-files a:hover{border-color:var(--brand);background:var(--brand-soft)}
 .task-files a>span:first-child{color:var(--brand);font-size:18px}
 .task-files small{color:var(--muted)}
+.practice-subject-card{display:block;text-decoration:none;padding:26px}
+.practice-subject-title{font-size:21px;font-weight:750;margin-bottom:9px}
+.practice-subject-open{margin-top:22px;color:var(--brand);font-weight:650}
+.practice-subject-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.practice-section-head{margin-top:20px}
+.practice-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
+.practice-result-count{margin-bottom:10px}
+.task-view-statement{font-size:15px;line-height:1.7;white-space:pre-wrap}
+.field-last{margin-bottom:0}
+.task-view-actions{display:flex;gap:8px;flex-wrap:wrap}
 .bank-task-preview{display:block!important;width:100%;text-align:left;color:var(--text);font:inherit;cursor:pointer;
   padding:18px 20px!important;text-decoration:none}
 .bank-task-preview:hover{border-color:var(--brand);background:color-mix(in srgb,var(--brand-soft) 35%,var(--panel))}
