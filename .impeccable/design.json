@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-09T18:00:00+03:00",
+  "title": "Design System: Token",
+  "extensions": {
+    "colorMeta": {
+      "action-blue": { "role": "primary", "displayName": "Action Blue", "canonical": "#2f6bff", "tonalRamp": ["#e8efff", "#5b8bff", "#2f6bff"] },
+      "canvas": { "role": "neutral", "displayName": "Cool Canvas", "canonical": "#f5f7fb" },
+      "surface": { "role": "neutral", "displayName": "Work Surface", "canonical": "#ffffff" },
+      "success": { "role": "secondary", "displayName": "Success Green", "canonical": "#16a34a", "tonalRamp": ["#e8f8ee", "#16a34a"] },
+      "warning": { "role": "secondary", "displayName": "Attention Amber", "canonical": "#d97706", "tonalRamp": ["#fff4e0", "#d97706"] },
+      "danger": { "role": "secondary", "displayName": "Error Red", "canonical": "#dc2626", "tonalRamp": ["#fdeaea", "#dc2626"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Page Headline", "purpose": "Conventional page-level titles outside the compact lesson shell." },
+      "body": { "displayName": "Application Body", "purpose": "Dense, readable interface copy." },
+      "label": { "displayName": "Scan Label", "purpose": "Section, status and table labels." },
+      "code": { "displayName": "Live Code", "purpose": "Code, answers, timers and test data." }
+    },
+    "shadows": [
+      { "name": "panel-ambient", "value": "0 1px 2px rgba(20,30,60,.05), 0 8px 24px rgba(20,30,60,.06)", "purpose": "Quiet card separation in light mode." },
+      { "name": "active-navigation", "value": "0 4px 12px rgba(47,107,255,.28)", "purpose": "Current navigation destination only." },
+      { "name": "segment-selection", "value": "0 1px 3px rgba(20,30,60,.14)", "purpose": "Selected option inside a segmented control." }
+    ],
+    "motion": [
+      { "name": "live-pulse", "value": "2.2s infinite", "purpose": "Connectivity dot only; disabled under prefers-reduced-motion." },
+      { "name": "control-transition", "value": "0.18s", "purpose": "Toggle background and thumb movement in the shared application system." },
+      { "name": "laser-fade", "value": "0.95s ease-out", "purpose": "Fades a tutor-only, student-and-task-targeted red teaching trail after pointer release; the trail is realtime and transient." }
+    ],
+    "breakpoints": [
+      { "name": "toolbar-wrap", "value": "1480px" },
+      { "name": "compact-desktop", "value": "1180px" },
+      { "name": "single-column", "value": "900px" },
+      { "name": "narrow", "value": "560px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact primary action for the live lesson.",
+      "html": "<button class=\"ds-btn-primary\">Завершить</button>",
+      "css": ".ds-btn-primary{border:0;border-radius:10px;padding:8px 13px;background:#2f6bff;color:#fff;font:650 13px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer}.ds-btn-primary:hover{opacity:.9}.ds-btn-primary:focus-visible{outline:3px solid rgba(47,107,255,.35);outline-offset:2px}.ds-btn-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action that stays subordinate to lesson state.",
+      "html": "<button class=\"ds-btn-ghost\">Отменить</button>",
+      "css": ".ds-btn-ghost{border:1px solid #e3e8f2;border-radius:10px;padding:8px 13px;background:transparent;color:#7b869c;font:650 13px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer}.ds-btn-ghost:hover{border-color:#2f6bff;color:#2f6bff}.ds-btn-ghost:focus-visible{outline:3px solid rgba(47,107,255,.25);outline-offset:2px}.ds-btn-ghost:active{background:#e8efff}"
+    },
+    {
+      "name": "Lesson Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Primary contained surface in the lesson workspace.",
+      "html": "<section class=\"ds-card\"><h3>Задания занятия</h3><p>Выберите задачу, чтобы открыть живую работу ученика.</p></section>",
+      "css": ".ds-card{background:#fff;color:#1b2333;border-radius:14px;padding:13px;box-shadow:0 1px 2px rgba(20,30,60,.05),0 8px 24px rgba(20,30,60,.06);font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-card h3{margin:0 0 10px;color:#7b869c;font-size:12px;letter-spacing:.06em;text-transform:uppercase}.ds-card p{margin:0;font-size:13.5px;line-height:1.6}"
+    },
+    {
+      "name": "Answer Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Monospace field for code-related answers.",
+      "html": "<input class=\"ds-answer-input\" value=\"214 9876\" aria-label=\"Ответ\">",
+      "css": ".ds-answer-input{border:1px solid #e3e8f2;background:#fff;color:#1b2333;border-radius:9px;padding:8px 10px;font:13.5px/1.62 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.ds-answer-input:hover{border-color:#9fb8ff}.ds-answer-input:focus-visible{outline:0;border-color:#2f6bff;box-shadow:0 0 0 3px rgba(47,107,255,.18)}"
+    },
+    {
+      "name": "Current Stage Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Current lesson stage in the sticky header.",
+      "html": "<button class=\"ds-stage-chip\">Разбор <span>18:42</span></button>",
+      "css": ".ds-stage-chip{border:1px solid #2f6bff;background:#2f6bff;color:#fff;border-radius:99px;padding:5px 11px;font:650 12px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-stage-chip span{opacity:.72;font-variant-numeric:tabular-nums}.ds-stage-chip:hover{filter:brightness(1.06)}.ds-stage-chip:focus-visible{outline:3px solid rgba(47,107,255,.3);outline-offset:2px}.ds-stage-chip:active{filter:brightness(.96)}"
+    },
+    {
+      "name": "Group Status Cell",
+      "kind": "custom",
+      "description": "Dense progress cell that pairs symbol and semantic color.",
+      "html": "<span class=\"ds-status-cell\" aria-label=\"Верно\">✓</span>",
+      "css": ".ds-status-cell{width:58px;height:30px;border-radius:7px;display:grid;place-items:center;border:1px solid #e3e8f2;background:#e8f8ee;color:#16a34a;font:750 11px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-status-cell:hover{border-color:#16a34a}.ds-status-cell:focus-visible{outline:3px solid rgba(22,163,74,.25);outline-offset:2px}"
+    },
+    {
+      "name": "Interactive Code Editor",
+      "kind": "custom",
+      "description": "DTO-backed editable Python surface with aligned highlighting, embedded local-run status and role-specific controls: Run for both roles, Laser and contextual coaching for tutors only.",
+      "html": "<section class=\"ds-code-editor\"><header><div><strong>Код ученика</strong><span>живой экран · изменения видит ученик</span></div><div><button>Лазер</button><button>▷ Запустить</button></div></header><div class=\"ds-code-stage\"><span><i>1</i><code><b>def</b> pairs(text):</code></span><span><i>2</i><code>    data = [<em>int</em>(x) <b>for</b> x <b>in</b> text.split()]</code></span></div><footer>Локальный запуск не меняет время, попытки или результат</footer></section>",
+      "css": ".ds-code-editor{overflow:hidden;border-radius:14px;background:#fff;color:#1b2333;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;box-shadow:0 1px 2px rgba(20,30,60,.05),0 8px 24px rgba(20,30,60,.06)}.ds-code-editor header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 13px;border-bottom:1px solid #e3e8f2}.ds-code-editor header>div:first-child{display:flex;flex-direction:column}.ds-code-editor header strong{font-size:13px}.ds-code-editor header span{font-size:11px;color:#7b869c}.ds-code-editor header>div:last-child{display:flex;gap:7px}.ds-code-editor button{border:1px solid #e3e8f2;border-radius:9px;padding:7px 11px;background:#f5f7fb;color:#1b2333;font-size:12px;font-weight:700}.ds-code-editor button:hover,.ds-code-editor button:focus-visible{border-color:#2f6bff;outline:0;color:#2f6bff}.ds-code-stage{min-height:180px;padding:12px 0;font:13.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.ds-code-stage>span{display:grid;grid-template-columns:38px minmax(max-content,1fr)}.ds-code-stage i{padding-right:12px;text-align:right;color:#98a3b7;font-style:normal}.ds-code-stage code{font:inherit}.ds-code-stage b{color:#7c3aed}.ds-code-stage em{color:#2f6bff;font-style:normal}.ds-code-editor footer{min-height:38px;padding:9px 13px;border-top:1px solid #e3e8f2;background:#f5f7fb;color:#7b869c;font-size:12px;font-weight:650}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Live Lesson Control Room",
+    "overview": "A compact operational workspace that keeps lesson stage, task, live student work, validation and group state visible as one connected field. Calm technical surfaces and disciplined semantic color support rapid scanning during a live lesson.",
+    "keyCharacteristics": ["Compact information-rich workspace", "One blue action voice", "Semantic learning-state colors", "Monospace for code and numeric work", "Tonal depth with quiet borders and shadows"],
+    "rules": [
+      { "name": "The Semantic Color Rule", "body": "Blue means action or live selection; green, amber and red retain their state meanings.", "section": "colors" },
+      { "name": "The Scan Before Read Rule", "body": "Expose state through hierarchy before adding explanatory prose.", "section": "typography" },
+      { "name": "The Quiet Depth Rule", "body": "Use tonal surfaces and borders before visible lift.", "section": "elevation" },
+      { "name": "The Statistics Truth Rule", "body": "Tutor coaching, local Run, hints and laser gestures never change active time, tries or correctness.", "section": "components" }
+    ],
+    "dos": ["Do keep lesson state, task context and live work spatially connected.", "Do pair status color with text, symbol or value.", "Do preserve light and dark semantic contrast.", "Do place the expanded task prompt above each full-size editing context.", "Do derive individual, group and student content from the lesson DTO and role-filtered attempt data."],
+    "donts": ["Don't use semantic colors as arbitrary decoration.", "Don't introduce oversized editorial type into the live lesson.", "Don't expose tutor-only Laser or contextual coaching controls to students.", "Don't let coaching mutate attempt fields other than code.", "Don't let tutor coaching, local Run, hints or laser affect active time, tries or correctness.", "Don't persist targeted laser trails or hints as attempt statistics.", "Don't canonize demo names, dates, timers, counts or KPI values."]
+  }
+}

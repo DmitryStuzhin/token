@@ -9,6 +9,7 @@ module.exports = [
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
+      'public/assets/vendor/**',
     ],
   },
   {

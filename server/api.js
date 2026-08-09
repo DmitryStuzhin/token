@@ -392,6 +392,30 @@ router.post('/attempts/:id/progress', A.requireRole('student'), asyncRoute(async
   res.json({ ok:true, activeSeconds:secs });
 }));
 
+/* преподаватель может поправить только черновик открытой работы.
+   Учебные показатели намеренно не меняются: время, попытки и результат
+   принадлежат действиям ученика и остаются единственным источником статистики. */
+router.post('/attempts/:id/coach', A.requireRole('tutor'), asyncRoute(async (req, res) => {
+  const a = await repository(req).findAttempt(req.params.id);
+  if (!a) return res.status(404).json({ error:'Работа не найдена' });
+  if (!a.lesson_id) return res.status(400).json({ error:'Править можно только черновик занятия' });
+  const lesson = await tutorOwnsLesson(req, a.lesson_id);
+  if (!lesson) return res.status(403).json({ error:'Это не ваше занятие' });
+  if (a.status === 'checked' || a.status === 'submitted') {
+    return res.status(400).json({ error:'Работа уже закрыта' });
+  }
+  const update = await repository(req).updateAttemptProgress(a, {
+    code:String((req.body || {}).code || '').slice(0, 20000),
+    activeSeconds:a.active_seconds || 0,
+    status:a.status,
+    startedAt:a.started_at,
+  });
+  assertUpdated(update, 'Attempt', a.id);
+  await req.app.locals.live.push(a.lesson_id, a.student_id);
+  const fresh = await repository(req).findAttempt(a.id);
+  res.json({ ok:true, version:fresh && fresh.version });
+}));
+
 /* проверка ответа — эталон сравнивается только здесь */
 router.post('/attempts/:id/answer', A.requireRole('student'), asyncRoute(async (req, res) => {
   const a = await ownAttempt(req, res); if (!a) return;

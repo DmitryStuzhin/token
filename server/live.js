@@ -35,7 +35,8 @@ function create(server, dependencies) {
     if (!payload) return;
     const message = JSON.stringify({ type: 'snapshot', ...payload });
     room.forEach(socket => {
-      if (socket.readyState === WebSocket.OPEN && socket.role === 'tutor') socket.send(message);
+      const allowed = socket.role === 'tutor' || (socket.role === 'student' && socket.studentId === studentId);
+      if (socket.readyState === WebSocket.OPEN && allowed) socket.send(message);
     });
   }
   function presence(lessonId) {
@@ -44,6 +45,47 @@ function create(server, dependencies) {
     const who = [...room].map(socket => ({ role: socket.role, name: socket.userName }));
     const message = JSON.stringify({ type: 'presence', lessonId, who });
     room.forEach(socket => { if (socket.readyState === WebSocket.OPEN) socket.send(message); });
+  }
+
+  function sendToStudent(lessonId, studentId, payload) {
+    const room = roomsByLesson.get(lessonId);
+    if (!room) return;
+    const message = JSON.stringify(payload);
+    room.forEach(client => {
+      if (client.readyState === WebSocket.OPEN && client.role === 'student' && client.studentId === studentId) {
+        client.send(message);
+      }
+    });
+  }
+
+  async function tutorEvent(socket, message) {
+    if (socket.role !== 'tutor' || !message || typeof message !== 'object') return;
+    const studentId = String(message.studentId || '');
+    const state = await repository.fullState();
+    const lesson = state.lessons.find(item => item.id === socket.lessonId);
+    if (!lesson) return;
+    const students = lesson.groupId
+      ? state.groupMembers.filter(item => item.groupId === lesson.groupId && item.status === 'active').map(item => item.studentId)
+      : state.enrollments.filter(item => item.id === lesson.enrollmentId).map(item => item.studentId);
+    if (!students.includes(studentId)) return;
+
+    if (message.type === 'laser') {
+      const taskId = String(message.taskId || '');
+      if (!(lesson.taskIds || []).includes(taskId)) return;
+      const points = Array.isArray(message.points) ? message.points.slice(0, 256)
+        .map(point => ({ x:Number(point && point.x), y:Number(point && point.y) }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)
+          && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1) : [];
+      if (points.length < 2) return;
+      sendToStudent(socket.lessonId, studentId, { type:'laser', lessonId:socket.lessonId, taskId, points });
+    }
+    if (message.type === 'hint') {
+      const text = String(message.text || '').trim().slice(0, 500);
+      const line = Math.max(1, Math.min(10000, Number(message.line) || 1));
+      const taskId = String(message.taskId || '');
+      if (!text || !(lesson.taskIds || []).includes(taskId)) return;
+      sendToStudent(socket.lessonId, studentId, { type:'hint', lessonId:socket.lessonId, taskId, line, text });
+    }
   }
 
   server.on('upgrade', (request, socket, head) => {
@@ -102,6 +144,9 @@ function create(server, dependencies) {
       try { message = JSON.parse(String(buffer)); } catch { return; }
       if (message?.type === 'ping' && socket.role === 'student' && socket.studentId) {
         push(socket.lessonId, socket.studentId);
+      }
+      if (socket.role === 'tutor' && (message?.type === 'laser' || message?.type === 'hint')) {
+        void tutorEvent(socket, message).catch(() => undefined);
       }
     });
     socket.on('close', () => { leave(socket.lessonId, socket); presence(socket.lessonId); });

@@ -66,19 +66,24 @@ function expectRejected(url, cookie, timeoutMs = 3000) {
 }
 
 test.before(async () => {
-  await new Promise(resolve => { server.listen(0, '127.0.0.1', resolve); });
+  await new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
 });
 
 test.after(async () => {
-  await new Promise(resolve => { server.close(resolve); });
+  await new Promise((resolve) => {
+    server.close(resolve);
+  });
   db.close();
   fs.rmSync(testDir, { recursive: true, force: true });
 });
 
-test('lesson room authorizes participants, rejects outsiders and delivers draft', async () => {
+test('lesson room authorizes participants and delivers draft, coaching, laser and hint safely', async () => {
   const tutor = request.agent(app);
   const student = request.agent(app);
   const outsider = request.agent(app);
+  const outsiderTutor = request.agent(app);
 
   const tutorRegistration = await tutor.post('/api/auth/register').send({
     ...fixture.tutor,
@@ -92,16 +97,26 @@ test('lesson room authorizes participants, rejects outsiders and delivers draft'
     ...fixture.secondStudent,
     email: 'ws-outsider@example.test',
   });
+  const outsiderTutorRegistration = await outsiderTutor.post('/api/auth/register').send({
+    ...fixture.tutor,
+    email: 'ws-outsider-tutor@example.test',
+  });
   assert.equal(tutorRegistration.status, 200);
   assert.equal(studentRegistration.status, 200);
   assert.equal(outsiderRegistration.status, 200);
+  assert.equal(outsiderTutorRegistration.status, 200);
 
   const invite = await tutor.post('/api/invites').send({
     ...fixture.individualRelationship,
   });
-  assert.equal((await student.post('/api/invites/accept').send({
-    code: invite.body.invite.code,
-  })).status, 200);
+  assert.equal(
+    (
+      await student.post('/api/invites/accept').send({
+        code: invite.body.invite.code,
+      })
+    ).status,
+    200,
+  );
 
   const tutorState = await tutor.get('/api/state');
   const enrollment = tutorState.body.enrollments[0];
@@ -111,13 +126,18 @@ test('lesson room authorizes participants, rejects outsiders and delivers draft'
     durationMin: fixture.lesson.durationMin,
   });
   const tasks = await tutor.get(`/api/tasks?subject=${fixture.taskSelection.subjectId}`);
-  const taskItem = tasks.body.find(item => item.autoCheck === fixture.taskSelection.autoCheck);
-  assert.equal((await tutor.post(`/api/lessons/${lesson.body.id}/tasks`).send({
-    taskId: taskItem.id,
-  })).status, 200);
+  const taskItem = tasks.body.find((item) => item.autoCheck === fixture.taskSelection.autoCheck);
+  assert.equal(
+    (
+      await tutor.post(`/api/lessons/${lesson.body.id}/tasks`).send({
+        taskId: taskItem.id,
+      })
+    ).status,
+    200,
+  );
 
   const studentState = await student.get('/api/state');
-  const attempt = studentState.body.attempts.find(item => item.lessonId === lesson.body.id);
+  const attempt = studentState.body.attempts.find((item) => item.lessonId === lesson.body.id);
   assert.ok(attempt);
 
   const address = server.address();
@@ -125,21 +145,87 @@ test('lesson room authorizes participants, rejects outsiders and delivers draft'
   const tutorWs = new WebSocket(wsUrl, { headers: { Cookie: cookieOf(tutorRegistration) } });
   const studentWs = new WebSocket(wsUrl, { headers: { Cookie: cookieOf(studentRegistration) } });
   await Promise.all([
-    new Promise((resolve, reject) => { tutorWs.once('open', resolve).once('error', reject); }),
-    new Promise((resolve, reject) => { studentWs.once('open', resolve).once('error', reject); }),
+    new Promise((resolve, reject) => {
+      tutorWs.once('open', resolve).once('error', reject);
+    }),
+    new Promise((resolve, reject) => {
+      studentWs.once('open', resolve).once('error', reject);
+    }),
   ]);
 
-  const draftMessage = waitForMessage(tutorWs, message =>
-    message.type === 'snapshot' &&
-    message.attempts.some(item => item.id === attempt.id && item.code === 'live-code'));
-
+  const draftMessage = waitForMessage(
+    tutorWs,
+    (message) =>
+      message.type === 'snapshot' &&
+      message.attempts.some((item) => item.id === attempt.id && item.code === 'live-code'),
+  );
 
   const progress = await student.post(`/api/attempts/${attempt.id}/progress`).send({
-    code: 'live-code', activeSeconds: 15,
+    code: 'live-code',
+    activeSeconds: 15,
   });
   assert.equal(progress.status, 200);
   const delivered = await draftMessage;
   assert.equal(delivered.lessonId, lesson.body.id);
+
+  const coachedMessage = waitForMessage(
+    studentWs,
+    (message) =>
+      message.type === 'snapshot' &&
+      message.attempts.some((item) => item.id === attempt.id && item.code === 'coached-code'),
+  );
+  const coached = await tutor
+    .post(`/api/attempts/${attempt.id}/coach`)
+    .send({ code: 'coached-code' });
+  assert.equal(coached.status, 200);
+  await coachedMessage;
+  assert.equal(
+    (await student.post(`/api/attempts/${attempt.id}/coach`).send({ code: 'forbidden' })).status,
+    403,
+  );
+  assert.equal(
+    (await outsiderTutor.post(`/api/attempts/${attempt.id}/coach`).send({ code: 'forbidden' }))
+      .status,
+    403,
+  );
+
+  const afterCoach = await student.get('/api/state');
+  const coachedAttempt = afterCoach.body.attempts.find((item) => item.id === attempt.id);
+  assert.equal(coachedAttempt.code, 'coached-code');
+  assert.equal(coachedAttempt.activeSeconds, 15, 'coaching must not inflate active time');
+  assert.equal(coachedAttempt.tries, 0, 'coaching must not create answer tries');
+  assert.equal(coachedAttempt.isCorrect, null, 'coaching must not change correctness');
+
+  const laserMessage = waitForMessage(studentWs, (message) => message.type === 'laser');
+  tutorWs.send(
+    JSON.stringify({
+      type: 'laser',
+      studentId: coachedAttempt.studentId,
+      taskId: taskItem.id,
+      points: [
+        { x: 0.1, y: 0.2 },
+        { x: 0.5, y: 0.7 },
+      ],
+    }),
+  );
+  assert.deepEqual((await laserMessage).points, [
+    { x: 0.1, y: 0.2 },
+    { x: 0.5, y: 0.7 },
+  ]);
+
+  const hintMessage = waitForMessage(studentWs, (message) => message.type === 'hint');
+  tutorWs.send(
+    JSON.stringify({
+      type: 'hint',
+      studentId: coachedAttempt.studentId,
+      taskId: taskItem.id,
+      line: 2,
+      text: 'Проверь границу цикла',
+    }),
+  );
+  const hint = await hintMessage;
+  assert.equal(hint.line, 2);
+  assert.equal(hint.text, 'Проверь границу цикла');
 
   await expectRejected(wsUrl, cookieOf(outsiderRegistration));
 
