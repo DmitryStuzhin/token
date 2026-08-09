@@ -1,0 +1,17 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Импорт КомпЕГЭ — arcs.studio</title><link rel="stylesheet" href="assets/app.css"></head>
+<body><main style="max-width:920px;margin:40px auto;padding:0 20px">
+  <a href="admin.html#bank">← Банк заданий</a>
+  <section class="card" style="margin-top:18px"><div class="head"><div><h2>Импорт из КомпЕГЭ</h2>
+    <div class="hint">Задания сохраняются в PostgreSQL, файлы — отдельно, изменения создают новую версию</div></div></div>
+    <div class="note n-blue">Укажите ID или ссылки, по одному в строке. За один запуск — не более 100 заданий.</div>
+    <textarea id="ids" placeholder="23570&#10;https://kompege.ru/task?id=2395" style="width:100%;min-height:180px;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:10px"></textarea>
+    <div class="answer"><button class="btn" id="run">Импортировать</button></div><div id="result"></div>
+  </section>
+  <section class="card" style="margin-top:14px"><div class="head"><h2>Импортированные задания</h2><button class="btn ghost sm" id="refresh">Обновить</button></div><div id="tasks" class="muted">Загрузка…</div></section>
+</main><script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function load(){const box=document.querySelector('#tasks');try{const r=await fetch('/api/tasks');if(!r.ok)throw Error((await r.json()).error);const rows=await r.json();box.innerHTML=rows.length?`<table><thead><tr><th>№</th><th>Задание</th><th>Версия</th><th>Файлы</th></tr></thead><tbody>${rows.map(t=>`<tr><td><b>${t.exam_number}</b></td><td><a href="${esc(t.source_url)}" target="_blank">${esc(t.title)}</a><div class="muted small">ID ${esc(t.external_id)}</div></td><td>${t.version}</td><td>${t.assets.map(a=>`<a href="${esc(a.url)}">${esc(a.name)}</a>`).join('<br>')||'—'}</td></tr>`).join('')}</tbody></table>`:'Пока ничего не импортировано';}catch(e){box.innerHTML=`<div class="note n-red">${esc(e.message)}. Проверьте PostgreSQL и выполните миграции.</div>`}}
+document.querySelector('#run').onclick=async()=>{const b=document.querySelector('#run'),out=document.querySelector('#result');b.disabled=true;out.innerHTML='<div class="note n-blue">Импорт выполняется…</div>';try{const tasks=document.querySelector('#ids').value.split(/\n|,/).map(x=>x.trim()).filter(Boolean);const r=await fetch('/api/imports/kompege',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tasks})});const x=await r.json();if(!r.ok)throw Error(x.error);out.innerHTML=`<div class="note ${x.failed_count?'n-amber':'n-green'}">Создано: ${x.created_count}; обновлено: ${x.updated_count}; без изменений: ${x.unchanged_count}; ошибок: ${x.failed_count}.${x.errors.map(e=>`<br>${esc(e.external_id)}: ${esc(e.message)}`).join('')}</div>`;await load()}catch(e){out.innerHTML=`<div class="note n-red">${esc(e.message)}</div>`}finally{b.disabled=false}};
+document.querySelector('#refresh').onclick=load;load();
+</script></body></html>
