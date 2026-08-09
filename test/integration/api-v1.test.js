@@ -72,7 +72,7 @@ test('API v1 provides screen DTO, pagination, ETag and Problem Details', async (
 
   const lessonCreated = await tutor
     .post('/api/v1/lessons')
-    .set('Idempotency-Key', 'api-v1-lesson-key')
+    .set('Idempotency-Key', 'api-v1-lesson-key') // gitleaks:allow — deterministic test value
     .send({
       enrollmentId: null,
       groupId: created.body.id,
