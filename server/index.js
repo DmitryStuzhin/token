@@ -1,79 +1,62 @@
-/* ═══════════════════════════════════════════════════════════════════
-   TOKEN — точка входа
-
-   Один долгоживущий Node-процесс: HTTP + WebSocket + SQLite.
-   Ровно то, что записано в docs/ARCHITECTURE.md как вариант A.
-   ═══════════════════════════════════════════════════════════════════ */
-const path = require('path');
 const http = require('http');
-const express = require('express');
+const path = require('path');
 
-const A = require('./auth.js');
-const api = require('./api.js');
+const { createApp } = require('./app.js');
+const { loadConfig } = require('./config.js');
+const { createLogger } = require('./logger.js');
 const live = require('./live.js');
-const { db } = require('./db.js');
 
-const PORT = process.env.PORT || 3000;
-const PUBLIC = path.join(__dirname, '..', 'public');
-
-const app = express();
-app.disable('x-powered-by');
-app.use(express.json({ limit: '256kb' }));
-app.use(A.attach);
-
-/* страницы, доступные без входа */
-const OPEN_PAGES = new Set(['/login.html', '/favicon.ico']);
-
-/* Гость не должен получать разметку кабинета: уводим на вход сразу,
-   до отдачи файла. Клиент тоже проверяет, но решает сервер. */
-app.get(/\.html$/, (req, res, next) => {
-  if (OPEN_PAGES.has(req.path) || req.user) return next();
-  const next_ = encodeURIComponent(req.path.replace(/^\//, '') + (req._parsedUrl.search || ''));
-  res.redirect('/login.html?next=' + next_);
-});
-
-app.use('/api', api);
-
-app.get('/', (req, res) => {
-  if (!req.user) return res.redirect('/login.html');
-  res.redirect(A.ROLES[req.user.role].home);
-});
-
-app.use('/shared', express.static(path.join(__dirname, '..', 'shared'), { maxAge: 0 }));
-app.use(express.static(PUBLIC, { extensions: ['html'], etag: true, maxAge: 0 }));
-
-app.use((req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ error:'Нет такого метода' });
-  res.status(404).sendFile(path.join(PUBLIC, 'login.html'));
-});
-
-app.use((err, req, res, next) => {
-  console.error('[ошибка]', err && err.stack ? err.stack : err);
-  if (res.headersSent) return next(err);
-  res.status(500).json({ error:'Внутренняя ошибка сервера' });
-});
-
+const config = loadConfig();
+const logger = createLogger(config.logLevel);
+const app = createApp({ config, logger });
 const server = http.createServer(app);
-app.locals.live = live.create(server);
 
-server.listen(PORT, () => {
-  const counts = {
-    предметов: db.prepare('SELECT COUNT(*) n FROM subjects').get().n,
-    задач: db.prepare('SELECT COUNT(*) n FROM tasks').get().n,
-    пользователей: db.prepare('SELECT COUNT(*) n FROM users').get().n,
-    занятий: db.prepare('SELECT COUNT(*) n FROM lessons').get().n,
-  };
-  console.log('\n  Token запущен');
-  console.log('  http://localhost:' + PORT);
-  console.log('  база: data/token.db  ·  ' +
-    Object.entries(counts).map(([k, v]) => k + ': ' + v).join(', '));
-  console.log('');
+app.locals.live = live.create(server, { auth: app.locals.auth, repository: app.locals.repository });
+
+async function start() {
+  if (config.databaseDriver === 'postgres' && config.databaseMigrateOnStart) {
+    const { PostgresMigrator } = require('../packages/db/src/migrator.ts');
+    const migrator = new PostgresMigrator(
+      app.locals.services.pool,
+      path.join(__dirname, '..', 'packages', 'db', 'migrations'),
+    );
+    await migrator.up();
+  }
+  server.listen(config.port, () => {
+    void Promise.resolve(app.locals.repository.fullState()).then(state => {
+      const counts = {
+        subjects: state.subjects.length,
+        tasks: state.tasks.length,
+        users: state.users.length,
+        lessons: state.lessons.length,
+      };
+      logger.info('server_started', {
+        port: config.port,
+        environment: config.nodeEnv,
+        databaseDriver: config.databaseDriver,
+        counts,
+      });
+    }).catch(error => logger.error('server_state_read_failed', { error: error.message }));
+  });
+}
+
+void start().catch(error => {
+  logger.error('server_start_failed', { error: error.message });
+  void app.locals.services.close().finally(() => { process.exitCode = 1; });
 });
 
-function shutdown() {
-  console.log('\n  остановка…');
-  server.close(() => { try { db.close(); } catch (e) {} process.exit(0); });
-  setTimeout(() => process.exit(0), 3000).unref();
+function shutdown(signal) {
+  logger.info('server_stopping', { signal });
+  server.close(async () => {
+    try { await app.locals.services.close(); } catch (error) {
+      logger.error('database_close_failed', { error: error.message });
+    }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 3000).unref();
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+module.exports = { app, server };

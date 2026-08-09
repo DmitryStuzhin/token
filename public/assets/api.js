@@ -8,10 +8,17 @@ window.Api = (function () {
   async function call(method, path, body) {
     let res;
     try {
-      res = await fetch('/api' + path, {
+      const needsKey = method === 'POST' && [
+        '/invites', '/invites/accept', '/groups', '/lessons', '/assignments', '/tasks/import',
+      ].includes(path);
+      const headers = body ? { 'Content-Type': 'application/json' } : {};
+      if (needsKey) headers['Idempotency-Key'] = crypto.randomUUID
+        ? crypto.randomUUID()
+        : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      res = await fetch('/api/v1' + path, {
         method,
         credentials: 'same-origin',
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers,
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch (e) {
@@ -21,7 +28,7 @@ window.Api = (function () {
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
     if (!res.ok) {
-      const err = new Error((data && data.error) || 'Ошибка ' + res.status);
+      const err = new Error((data && (data.detail || data.error)) || 'Ошибка ' + res.status);
       err.status = res.status;
       err.details = data && data.errors;
       throw err;

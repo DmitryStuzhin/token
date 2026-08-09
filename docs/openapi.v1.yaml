@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: Token API
+  version: 1.0.0
+  description: Версионированный API платформы для репетиторов и учеников.
+servers:
+  - url: /api/v1
+security:
+  - sessionCookie: []
+x-list-parameters: &listParameters
+  - { in: query, name: cursor, schema: { type: string } }
+  - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+  - { in: query, name: sort, schema: { type: string, enum: [id, name, title, number, createdAt, startsAt, dueAt, submittedAt] } }
+  - { in: query, name: order, schema: { type: string, enum: [asc, desc] } }
+  - { in: query, name: subject, schema: { type: string } }
+  - { in: query, name: status, schema: { type: string } }
+  - { in: query, name: student, schema: { type: string } }
+  - { in: query, name: tutor, schema: { type: string } }
+  - { in: query, name: group, schema: { type: string } }
+  - { in: query, name: lesson, schema: { type: string } }
+  - { in: query, name: assignment, schema: { type: string } }
+tags:
+  - name: Identity
+  - name: Screens
+  - name: Learning
+  - name: Scheduling
+  - name: Relationships
+paths:
+  /auth/roles:
+    get:
+      security: []
+      tags: [Identity]
+      operationId: listRoles
+      responses:
+        '200': { description: Доступные роли, content: { application/json: { schema: { type: object } } } }
+  /auth/register:
+    post:
+      security: []
+      tags: [Identity]
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /auth/login:
+    post:
+      security: []
+      tags: [Identity]
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /auth/logout:
+    post:
+      tags: [Identity]
+      operationId: logout
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+  /me:
+    get:
+      tags: [Identity]
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Текущий пользователь и профиль
+          headers: { ETag: { schema: { type: string } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/CurrentUser' } } }
+        '401': { $ref: '#/components/responses/Problem' }
+  /profile:
+    get:
+      tags: [Identity]
+      operationId: getProfile
+      responses:
+        '200': { $ref: '#/components/responses/ScreenState' }
+  /screens/{screen}:
+    get:
+      tags: [Screens]
+      operationId: getScreen
+      parameters:
+        - in: path
+          name: screen
+          required: true
+          schema: { $ref: '#/components/schemas/ScreenName' }
+      responses:
+        '200': { $ref: '#/components/responses/ScreenState' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /tasks:
+    get:
+      tags: [Learning]
+      operationId: listTasks
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+  /attempts:
+    get:
+      tags: [Learning]
+      operationId: listAttempts
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+  /reviews:
+    get:
+      tags: [Learning]
+      operationId: listReviews
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+  /assignments:
+    get:
+      tags: [Learning]
+      operationId: listAssignments
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+    post:
+      tags: [Learning]
+      operationId: createAssignment
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateAssignmentRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /groups:
+    get:
+      tags: [Relationships]
+      operationId: listGroups
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+    post:
+      tags: [Relationships]
+      operationId: createGroup
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateGroupRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /students:
+    get:
+      tags: [Relationships]
+      operationId: listStudents
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+  /invites:
+    get:
+      tags: [Relationships]
+      operationId: listInvites
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+    post:
+      tags: [Relationships]
+      operationId: createInvite
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateInviteRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /invites/accept:
+    post:
+      tags: [Relationships]
+      operationId: acceptInvite
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties: { code: { type: string, minLength: 3, maxLength: 100 } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /lessons:
+    get:
+      tags: [Scheduling]
+      operationId: listLessons
+      parameters: *listParameters
+      responses: { '200': { $ref: '#/components/responses/Paginated' } }
+    post:
+      tags: [Scheduling]
+      operationId: createLesson
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateLessonRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /lessons/{lessonId}:
+    get:
+      tags: [Scheduling]
+      operationId: getLesson
+      parameters:
+        - { in: path, name: lessonId, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Занятие
+          headers: { ETag: { schema: { type: string, example: '"v3"' } } }
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Scheduling]
+      operationId: updateLesson
+      parameters:
+        - { in: path, name: lessonId, required: true, schema: { type: string } }
+        - { in: header, name: If-Match, required: true, schema: { type: string, example: '"v3"' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [planned, done, moved, cancelled, missed] } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '412': { $ref: '#/components/responses/Problem' }
+        '428': { $ref: '#/components/responses/Problem' }
+  /read-models/{model}:
+    get:
+      tags: [Screens]
+      operationId: getReadModel
+      parameters:
+        - in: path
+          name: model
+          required: true
+          schema: { type: string, enum: [student-dashboard, tutor-today, assignment-progress, student-subject-stats] }
+        - { in: query, name: student, schema: { type: string } }
+      responses:
+        '200':
+          description: Проекция, построенная из первичных фактов
+          headers: { ETag: { schema: { type: string } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, updatedAt]
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  updatedAt: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: token_sid
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 200 }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, detail, instance, requestId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }
+        errors: { type: array, items: { type: object } }
+    RegisterRequest:
+      type: object
+      required: [name, email, password, role]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 4, maxLength: 200 }
+        role: { type: string, enum: [student, tutor] }
+        grade: { type: integer, minimum: 1, maximum: 11 }
+        school: { type: string, maxLength: 300 }
+        subjects: { type: array, items: { type: string }, maxItems: 20 }
+        yearsExp: { type: number, minimum: 0, maximum: 80 }
+        rate: { type: number, minimum: 0 }
+        meetingUrl: { type: string, maxLength: 2000 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 200 }
+    CurrentUser:
+      type: object
+      required: [user, home]
+      properties:
+        user: { type: object, additionalProperties: true }
+        profile: { type: [object, 'null'], additionalProperties: true }
+        home: { type: string }
+    ScreenName:
+      type: string
+      enum: [login, index, tutor, students, groups, group, invites, invite, lesson, homework, task, tutor-check, stats, bank, account, parent]
+    ScreenState:
+      type: object
+      additionalProperties: true
+    CreateInviteRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [enrollment, group] }
+        subjectId: { type: string }
+        groupId: { type: string }
+        maxUses: { type: [integer, 'null'], minimum: 1 }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        note: { type: string, maxLength: 2000 }
+    CreateGroupRequest:
+      type: object
+      required: [subjectId, title]
+      properties:
+        subjectId: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        level: { type: string, maxLength: 100 }
+        schedule: { type: string, maxLength: 500 }
+        capacity: { type: integer, minimum: 1, maximum: 1000 }
+    CreateLessonRequest:
+      type: object
+      required: [startsAt]
+      properties:
+        enrollmentId: { type: string }
+        groupId: { type: string }
+        startsAt: { type: string, format: date-time }
+        durationMin: { type: integer, minimum: 10, maximum: 600 }
+    CreateAssignmentRequest:
+      type: object
+      required: [title, taskIds]
+      properties:
+        enrollmentId: { type: string }
+        groupId: { type: string }
+        lessonId: { type: [string, 'null'] }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        dueAt: { type: string, format: date-time }
+        taskIds: { type: array, minItems: 1, maxItems: 500, items: { type: string } }
+    PageInfo:
+      type: object
+      required: [limit, hasMore, nextCursor]
+      properties:
+        limit: { type: integer }
+        hasMore: { type: boolean }
+        nextCursor: { type: [string, 'null'] }
+    Paginated:
+      type: object
+      required: [items, page, meta]
+      properties:
+        items: { type: array, items: {} }
+        page: { $ref: '#/components/schemas/PageInfo' }
+        meta: { type: object, additionalProperties: true }
+  responses:
+    Problem:
+      description: Ошибка в формате RFC 9457 Problem Details
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    CommandSuccess:
+      description: Команда выполнена
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+    ScreenState:
+      description: Специализированный bootstrap экрана без эталонных ответов
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ScreenState' } } }
+    Paginated:
+      description: Страница ресурсов
+      headers: { ETag: { schema: { type: string } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } }

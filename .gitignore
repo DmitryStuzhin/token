@@ -1,6 +1,14 @@
 node_modules/
+.env
+.env.*
+!.env.example
 data/*.db
 data/*.db-*
+coverage/
+test-results/
+playwright-report/
+migration-reports/
+backups/
 .DS_Store
 *.log
 .vscode/
