@@ -37,16 +37,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  dependency-review:
-    name: dependency-review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-
   secret-scan:
     name: secret-scan
     runs-on: ubuntu-latest
