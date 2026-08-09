@@ -147,13 +147,19 @@
     const out = document.getElementById('f-out');
     btn.disabled = true;
     try {
-      const res = await Api.createInvite({
+      const data = {
         kind: kind.value,
-        subjectId: kind.value === 'group' ? null : document.getElementById('f-subj').value,
-        groupId: kind.value === 'group' ? document.getElementById('f-grp').value : null,
         maxUses: +document.getElementById('f-max').value || null,
         note: kind.value === 'group' ? 'Набор в группу' : 'Индивидуальные занятия',
-      });
+      };
+      if (kind.value === 'group') {
+        data.groupId = document.getElementById('f-grp').value;
+        if (!data.groupId) throw new Error('Сначала создайте группу');
+      } else {
+        data.subjectId = document.getElementById('f-subj').value;
+        if (!data.subjectId) throw new Error('Выберите предмет');
+      }
+      const res = await Api.createInvite(data);
       const url = C.inviteUrl(res.invite.code);
       out.innerHTML = `
         <div class="verdict v-ok" style="margin-top:14px">Ссылка создана — код <b>${UI.esc(res.invite.code)}</b></div>

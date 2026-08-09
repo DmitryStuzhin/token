@@ -21,6 +21,8 @@ async function start() {
       path.join(__dirname, '..', 'packages', 'db', 'migrations'),
     );
     await migrator.up();
+    const { ensureReferenceData } = require('./reference-data.js');
+    await ensureReferenceData(app.locals.services.pool);
   }
   server.listen(config.port, () => {
     void Promise.resolve(app.locals.repository.fullState()).then(state => {
