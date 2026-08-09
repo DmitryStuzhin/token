@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit",
     "boundaries": "depcruise modules packages server --config .dependency-cruiser.cjs",
     "licenses": "license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;BlueOak-1.0.0'",
-    "check": "npm run lint && npm run typecheck && npm run boundaries && npm run format:check && npm run api:check && node --check server/app.js && node --check server/api.js && node --check server/api-v1.js && node --check server/auth.js && node --check server/db.js && node --check server/index.js && node --check server/live.js && node --check server/logger.js && node --check server/reference-data.js && node --check modules/platform/infrastructure/postgres-platform-repository.js && node --check modules/identity/application/auth-service.js && node --check modules/identity/infrastructure/postgres-identity-store.js && node --check shared/core.js && node --check shared/domain.js"
+    "check": "npm run lint && npm run typecheck && npm run boundaries && npm run format:check && npm run api:check && node --check server/app.js && node --check server/api.js && node --check server/api-v1.js && node --check server/auth.js && node --check server/db.js && node --check server/index.js && node --check server/live.js && node --check server/logger.js && node --check server/security.js && node --check server/reference-data.js && node --check modules/platform/infrastructure/postgres-platform-repository.js && node --check modules/identity/application/auth-service.js && node --check modules/identity/infrastructure/postgres-identity-store.js && node --check shared/core.js && node --check shared/domain.js"
   },
   "engines": {
     "node": ">=20 <21"
@@ -54,6 +54,7 @@
     "js-yaml": "4.3.1"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
     "better-sqlite3": "^11.3.0",
     "dotenv": "^16.6.1",
     "express": "^4.21.0",

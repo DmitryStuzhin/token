@@ -21,6 +21,8 @@ const environmentSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
   SQL_METRICS: booleanFromEnvironment.default(false),
   WRITE_FREEZE: booleanFromEnvironment.default(false),
+  PUBLIC_ORIGIN: z.url().optional(),
+  TRUST_PROXY: booleanFromEnvironment.optional(),
 });
 
 export interface AppConfig {
@@ -36,6 +38,8 @@ export interface AppConfig {
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   readonly sqlMetrics: boolean;
   readonly writeFreeze: boolean;
+  readonly publicOrigin: string | null;
+  readonly trustProxy: boolean;
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readonly<AppConfig> {
@@ -50,6 +54,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readon
   if (databaseDriver === 'postgres' && !value.DATABASE_URL) {
     throw new Error('Invalid environment: DATABASE_URL is required for PostgreSQL');
   }
+  if (value.NODE_ENV === 'production' && !value.PUBLIC_ORIGIN) {
+    throw new Error('Invalid environment: PUBLIC_ORIGIN is required in production');
+  }
   return Object.freeze({
     nodeEnv: value.NODE_ENV,
     port: value.PORT,
@@ -63,5 +70,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readon
     logLevel: value.LOG_LEVEL ?? (value.NODE_ENV === 'test' ? 'silent' : 'info'),
     sqlMetrics: value.SQL_METRICS,
     writeFreeze: value.WRITE_FREEZE,
+    publicOrigin: value.PUBLIC_ORIGIN ? new URL(value.PUBLIC_ORIGIN).origin : null,
+    trustProxy: value.TRUST_PROXY ?? value.NODE_ENV === 'production',
   });
 }

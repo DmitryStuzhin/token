@@ -53,6 +53,13 @@ class SqliteIdentityStore {
   async findUserById(id) {
     return db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
   }
+  async updatePassword(id, credentials) {
+    db.prepare('UPDATE users SET pass_hash=?,pass_salt=? WHERE id=?').run(
+      credentials.hash,
+      credentials.salt,
+      id,
+    );
+  }
   async createSession(session) {
     db.prepare(
       `INSERT INTO sessions (token,user_id,created_at,expires_at,user_agent)

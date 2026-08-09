@@ -5,6 +5,7 @@ const A = require('./auth.js');
 const api = require('./api.js');
 const apiV1 = require('./api-v1.js');
 const { createLogger, requestContext } = require('./logger.js');
+const { securityHeaders, sameOriginProtection, rateLimit } = require('./security.js');
 const { createContainer } = require('../modules/composition.ts');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -16,6 +17,7 @@ function createApp(options = {}) {
   const app = express();
 
   app.disable('x-powered-by');
+  if (config.trustProxy) app.set('trust proxy', 1);
   app.locals.config = config;
   app.locals.logger = logger;
   app.locals.live = options.live || { push() {}, presence() {}, invalidate() {} };
@@ -39,6 +41,14 @@ function createApp(options = {}) {
   });
 
   app.use(requestContext(logger));
+  app.use(securityHeaders(config));
+  app.use('/api/v1/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
+  app.use('/api/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
+  app.use('/api/v1/auth/register', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/register', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/invites', rateLimit({ limit: 30, windowMs: 15 * 60_000 }));
+  app.use('/api/invites', rateLimit({ limit: 30, windowMs: 15 * 60_000 }));
+  app.use(sameOriginProtection(config));
   app.use(express.json({ limit: '256kb' }));
   app.use((req, res, next) => {
     if (config.writeFreeze && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {

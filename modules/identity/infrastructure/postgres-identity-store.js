@@ -84,6 +84,13 @@ class PostgresIdentityStore {
     );
     return result.rows[0] || null;
   }
+  async updatePassword(id, credentials) {
+    await this.pool.query(
+      `UPDATE users SET pass_hash=$1,pass_salt=$2,updated_at=now()
+       WHERE id::text=$3 OR legacy_id=$3`,
+      [credentials.hash, credentials.salt, id],
+    );
+  }
   async internalUserId(id) {
     const result = await this.pool.query(
       'SELECT id::text FROM users WHERE id::text=$1 OR legacy_id=$1 LIMIT 1',
