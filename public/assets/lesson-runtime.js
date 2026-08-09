@@ -37,11 +37,66 @@
   let liveSequence = 0;
   let socketEverOpened = false;
   let homeworkNotice = '';
+  let pythonRunner = null;
+  const pythonRequests = new Map();
+  const pythonReadyWaiters = [];
+  let pythonRunnerReady = false;
   const remoteSequences = new Map();
   const remoteCodeReceivedAt = new Map();
   const remoteLaserStrokes = new Map();
+  const pythonStatuses = new Map();
   const activityEvents = ['keydown', 'mousemove', 'click', 'scroll', 'input'];
   const markActivity = () => { idleSeconds = 0; };
+
+  function ensurePythonRunner() {
+    pythonRunner = pythonRunner?.isConnected ? pythonRunner : document.getElementById('python-runner');
+    if (pythonRunner?.isConnected) return;
+    pythonRunnerReady = false;
+    pythonRunner = document.createElement('iframe');
+    pythonRunner.id = 'python-runner';
+    pythonRunner.src = '/python-runner.html';
+    pythonRunner.sandbox = 'allow-scripts';
+    pythonRunner.hidden = true;
+    pythonRunner.title = 'Изолированный запуск Python';
+    document.body.append(pythonRunner);
+  }
+
+  window.addEventListener('message', event => {
+    if (!pythonRunner || event.source !== pythonRunner.contentWindow) return;
+    if (event.data?.type === 'python-runner-ready') {
+      pythonRunnerReady = true;
+      pythonReadyWaiters.splice(0).forEach(resolve => resolve());
+      return;
+    }
+    if (event.data?.type !== 'python-result') return;
+    const pending = pythonRequests.get(event.data.requestId);
+    if (!pending) return;
+    pythonRequests.delete(event.data.requestId);
+    clearTimeout(pending.timeout);
+    pending.resolve(event.data);
+  });
+
+  function waitForPythonRunner() {
+    if (pythonRunnerReady) return Promise.resolve();
+    if (!pythonRunner) return Promise.reject(new Error('Изолированная среда Python недоступна'));
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Среда Python не загрузилась')), 5_000);
+      pythonReadyWaiters.push(() => { clearTimeout(timeout); resolve(); });
+    });
+  }
+
+  async function executePython(code) {
+    await waitForPythonRunner();
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pythonRequests.delete(requestId);
+        reject(new Error('Превышено время выполнения'));
+      }, 5_000);
+      pythonRequests.set(requestId, { resolve, timeout });
+      pythonRunner.contentWindow.postMessage({ type:'python-run', requestId, code }, '*');
+    });
+  }
 
   const keywords = new Set('def for if elif else in return while import from not and or break continue with as lambda pass True False None class try except finally raise yield'.split(' '));
   const builtins = new Set('print range len int open max min sum sorted str list set dict input abs map enumerate zip round'.split(' '));
@@ -126,13 +181,16 @@
     const closed = attempt.status === 'checked' || attempt.status === 'submitted';
     const canEdit = !closed && (tutor || session.studentId === attempt.studentId);
     const title = tutor ? `${esc((userOf(attempt.studentId) || {}).name || 'Ученик')} · №${task.number}` : 'Ваш черновик';
+    const pythonStatus = pythonStatuses.get(attempt.id);
+    const statusClass = pythonStatus?.kind || 'idle';
+    const statusText = pythonStatus?.text || (closed ? 'Работа закрыта' : 'Готово к запуску · Ctrl/⌘ + Enter');
     return `<section class="interactive-editor lesson-card flush" data-attempt="${esc(attempt.id)}" data-task="${esc(task.id)}" data-student="${esc(attempt.studentId)}">
       <header class="editor-toolbar"><div><strong>${title}</strong><span>${closed ? 'работа закрыта' : tutor ? 'живой экран · изменения видит ученик' : 'сохраняется автоматически'}</span></div>
         <div class="editor-actions">${tutor ? '<button class="laser-button" type="button">Лазер</button>' : ''}<button class="run-code" type="button">▷ Запустить</button></div></header>
       <div class="editor-stage"><pre class="code-highlight" aria-hidden="true">${highlight(attempt.code || '')}</pre>
         <textarea class="code-input" spellcheck="false" aria-label="Код решения" ${canEdit ? '' : 'readonly'}>${esc(attempt.code || '')}</textarea>
         <svg class="laser-layer" aria-hidden="true" preserveAspectRatio="none"></svg></div>
-      <footer class="editor-footer"><span class="editor-status idle" aria-live="polite">${closed ? 'Работа закрыта' : 'Готово к запуску · Ctrl/⌘ + Enter'}</span>
+      <footer class="editor-footer"><span class="editor-status ${statusClass}" aria-live="polite">${esc(statusText)}</span>
         ${!tutor ? studentActions(task, attempt, closed) : tutorActions(attempt)}</footer>
     </section>`;
   }
@@ -167,7 +225,7 @@
       return `<div class="heat-row" data-student-row="${esc(studentId)}"><span></span><button class="student-name" data-student="${esc(studentId)}"><span class="mini-avatar">${initials(user && user.name)}</span><span>${esc(user && user.name || 'Ученик')}<small>${attempts.filter(a => a && a.isCorrect).length} из ${attempts.length}</small></span></button>${cells}<b>${attempts.filter(a => a && a.isCorrect).length} / ${attempts.length}</b></div>`;
     }).join('');
     return `<div class="group-layout"><div class="stack"><div class="group-kpis"><div class="group-kpi blue"><b>${roster.length}</b><span>участников</span></div><div class="group-kpi green"><b>${metrics.solved}</b><span>решено задач</span></div><div class="group-kpi amber"><b>${metrics.waiting}</b><span>ждут проверки</span></div><div class="group-kpi red"><b>${metrics.stuck}</b><span>дольше 8 минут</span></div></div>
-      <section class="lesson-card flush"><div class="card-head group-head"><h2 class="micro-head">Прогресс группы</h2><span class="tag">Статусы каждой попытки отдельно</span></div><div class="heat-wrap"><div class="heat-table runtime-heat" style="--task-count:${Math.max(1, (lesson.taskIds || []).length)}"><div class="heat-row head"><span></span><span>Ученик</span>${head}<span>Итог</span></div>${rows}</div></div></section></div>
+      <section class="lesson-card flush"><div class="card-head group-head"><h2 class="micro-head">Прогресс группы</h2><span class="tag">Статусы каждой попытки отдельно</span></div><div class="heat-wrap"><div class="heat-table runtime-heat tasks-${Math.min(27, Math.max(1, (lesson.taskIds || []).length))}"><div class="heat-row head"><span></span><span>Ученик</span>${head}<span>Итог</span></div>${rows}</div></div></section></div>
       <div class="stack sticky">${linksCard()}${homeworkCard()}<section class="lesson-card"><h2 class="micro-head">Как открыть работу</h2><p class="stat-truth">Нажмите имя ученика или ячейку задачи — откроется полноразмерный экран с условием и живым кодом.</p></section></div></div>`;
   }
   function studentView() {
@@ -193,7 +251,9 @@
       <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
   }
   function render() {
-    document.body.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
+    const pageRoot = document.getElementById('lesson-root');
+    pageRoot.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
+    ensurePythonRunner();
     bindCommon(); bindEditor(document.querySelector('.interactive-editor')); connectLive(); updateConnectionState();
   }
 
@@ -321,14 +381,17 @@
   }
   function setStatus(root, kind, text) { const node = root.querySelector('.editor-status'); node.className = `editor-status ${kind}`; node.textContent = text; }
   async function runPython(root) {
-    const button = root.querySelector('.run-code'); const code = root.querySelector('.code-input').value; let output = '';
-    button.disabled = true; button.textContent = 'Запускаю…'; setStatus(root, 'running', 'Код выполняется в изолированной среде браузера…');
+    const button = root.querySelector('.run-code'); const code = root.querySelector('.code-input').value;
+    const remember = (kind, text) => {
+      pythonStatuses.set(root.dataset.attempt, { kind, text });
+      setStatus(root, kind, text);
+    };
+    button.disabled = true; button.textContent = 'Запускаю…'; remember('running', 'Код выполняется в изолированной среде браузера…');
     try {
-      if (!window.Sk) throw new Error('Среда Python не загрузилась');
-      Sk.configure({ output:text => { output += text; }, read:name => { if (Sk.builtinFiles?.files[name]) return Sk.builtinFiles.files[name]; throw new Error(`Модуль ${name} не найден`); }, inputfun:() => Promise.resolve('4 9 12 15'), inputfunTakesPrompt:true, __future__:Sk.python3 });
-      await Sk.misceval.asyncToPromise(() => Sk.importMainWithBody('<stdin>', false, code, true));
-      setStatus(root, 'ok', `Результат: ${output.trim() || 'программа ничего не вывела'}`);
-    } catch (error) { setStatus(root, 'error', `Ошибка: ${String(error).replace(/^ExternalError:\s*/, '').split('\n')[0]}`); }
+      const result = await executePython(code);
+      if (!result.ok) throw new Error(result.error || 'Не удалось выполнить код');
+      remember('ok', `Результат: ${String(result.output || '').trim() || 'программа ничего не вывела'}`);
+    } catch (error) { remember('error', `Ошибка: ${error.message || String(error)}`); }
     finally { button.disabled = false; button.textContent = '▷ Запустить'; }
   }
   function startActivityHeartbeat(root, textarea) {

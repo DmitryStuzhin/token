@@ -40,8 +40,14 @@ test('student registration opens an empty but actionable cabinet', async ({ page
 test('frontend screens use API v1 bootstrap and never request legacy state', async ({ page }) => {
   const requests = [];
   const pageErrors = [];
+  const cspErrors = [];
   page.on('request', request => requests.push(new URL(request.url()).pathname));
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => {
+    if (/content security policy|refused to (execute|apply|load|frame)/i.test(message.text())) {
+      cspErrors.push(message.text());
+    }
+  });
 
   await page.goto('/login.html');
   await page.getByRole('button', { name: 'Регистрация' }).click();
@@ -63,4 +69,5 @@ test('frontend screens use API v1 bootstrap and never request legacy state', asy
     expect(requests).toContain(`/api/v1/screens/${screen}.js`);
   }
   expect(pageErrors).toEqual([]);
+  expect(cspErrors).toEqual([]);
 });

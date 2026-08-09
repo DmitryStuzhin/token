@@ -1,16 +1,25 @@
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const APPLICATION_CSP = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self'; frame-src 'self'; worker-src 'none'; upgrade-insecure-requests";
+function pythonRunnerCsp(publicOrigin) {
+  return `default-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'none'; object-src 'none'; script-src ${publicOrigin} 'unsafe-eval'; script-src-attr 'none'; style-src 'none'; connect-src 'none'; img-src 'none'; font-src 'none'`;
+}
 
 function securityHeaders(config) {
   return (req, res, next) => {
+    const pythonRunner = req.path === '/python-runner.html';
+    const pythonRunnerAsset = req.path === '/assets/python-runner.js'
+      || req.path.startsWith('/assets/vendor/skulpt/');
     res.set({
-      'Content-Security-Policy': "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self'; upgrade-insecure-requests",
+      'Content-Security-Policy': pythonRunner
+        ? pythonRunnerCsp(config.publicOrigin || `${req.protocol}://${req.get('host')}`)
+        : APPLICATION_CSP,
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Resource-Policy': 'same-origin',
+      'Cross-Origin-Resource-Policy': pythonRunnerAsset ? 'cross-origin' : 'same-origin',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
       'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
     });
+    if (!pythonRunner) res.set('X-Frame-Options', 'DENY');
     if (config.nodeEnv === 'production') {
       res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }

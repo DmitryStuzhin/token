@@ -49,11 +49,11 @@ window.UI = (function () {
         <div class="logo">Token<small>${esc(Auth.ROLES[s.role].label)}</small></div>
         <nav class="nav">${items}</nav>
         <div class="side-foot">
-          <div class="rolepick" style="display:flex;align-items:center;gap:10px">
+          <div class="rolepick csp-rolepick">
             ${avatar(s.user.name, s.role === 'tutor' ? 'blue' : '')}
-            <div style="min-width:0;flex:1">
-              <div style="font-weight:650;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.user.name)}</div>
-              <div class="muted" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.user.email)}</div>
+            <div class="csp-rolecopy">
+              <div class="csp-role-name">${esc(s.user.name)}</div>
+              <div class="muted csp-role-email">${esc(s.user.email)}</div>
             </div>
           </div>
           <a href="#" class="logout" id="do-logout"><span class="ico">⏻</span>Выйти</a>
@@ -100,7 +100,7 @@ window.UI = (function () {
   function subjectSwitcher(studentId, current) {
     const list = Core.subjectsOf(studentId);
     if (list.length < 2) return '';
-    return `<div class="filters" style="margin:0">${list.map(x =>
+    return `<div class="filters filters-compact">${list.map(x =>
       `<button data-subj="${x.id}" class="${x.id === current ? 'on' : ''}">${esc(x.short || x.name)}</button>`
     ).join('')}</div>`;
   }
@@ -129,13 +129,23 @@ window.UI = (function () {
   }
   function bar(percent, color) {
     const p = Math.max(0, Math.min(100, percent || 0));
-    return `<div class="bar"><i style="width:${p}%${color ? ';background:' + color : ''}"></i></div>`;
+    const width = Math.round(p / 5) * 5;
+    const colorClass = color === 'var(--green)' ? 'bar-green'
+      : color === 'var(--amber)' ? 'bar-amber'
+      : color === 'var(--red)' ? 'bar-red' : '';
+    return `<div class="bar"><i class="bar-fill width-${width} ${colorClass}"></i></div>`;
   }
   function pctColor(p) {
     if (p == null) return 'var(--muted)';
     if (p >= 80) return 'var(--green)';
     if (p >= 60) return 'var(--amber)';
     return 'var(--red)';
+  }
+  function pctClass(p) {
+    if (p == null) return 'pct-muted';
+    if (p >= 80) return 'pct-green';
+    if (p >= 60) return 'pct-amber';
+    return 'pct-red';
   }
   function avatar(name, cls) {
     const ini = String(name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
@@ -154,8 +164,7 @@ window.UI = (function () {
       <span class="ty ${t.cls}">${t.label}</span>
       <span class="grow">${esc(l.label)}</span>
       <span class="muted small">открыть ↗</span>
-      ${editable ? `<button class="btn sm grey rm-link" data-i="${i}"
-         onclick="event.preventDefault();event.stopPropagation();">убрать</button>` : ''}
+      ${editable ? `<button class="btn sm grey rm-link" data-i="${i}">убрать</button>` : ''}
     </a>`;
   }
 
@@ -173,6 +182,6 @@ window.UI = (function () {
     return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
   }
 
-  return { page, badge, empty, bar, pctColor, avatar, esc, linkRow, LINK_TYPE,
+  return { page, badge, empty, bar, pctColor, pctClass, avatar, esc, linkRow, LINK_TYPE,
            qs, subjectId, subjectSwitcher, bindSubjectSwitcher, subjectTag, copy, dtLocal };
 })();

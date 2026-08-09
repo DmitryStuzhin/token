@@ -1,0 +1,149 @@
+(function () {
+  const ses = Auth.require('tutor');
+  if (!ses) return;
+  const C = Core;
+  const T = ses.tutorId;
+  const gid = UI.qs('group');
+  const gs = gid ? C.groupStats(gid) : null;
+
+  if (!gs) {
+    UI.page({
+    session: ses, active:'groups', head:{ title:'Группа не найдена' },
+      body:`<div class="card">${UI.empty('Нет такой группы',
+        '<a href="/groups.html">к списку групп</a>')}</div>` });
+    return;
+  }
+
+  const g = gs.group;
+  const invite = C.db.invites.find(i => i.groupId === g.id && C.inviteState(i).ok);
+
+  function kpiHTML() {
+    const cells = [
+      { v:`${gs.size} / ${g.capacity}`, s:'участников', c:'k-blue' },
+      { v: gs.avgAccuracy == null ? '—' : gs.avgAccuracy + '%', s:'средняя точность', c:'k-green' },
+      { v: gs.avgAttendance == null ? '—' : gs.avgAttendance + '%', s:'посещаемость', c: (gs.avgAttendance||0) >= 80 ? 'k-green' : 'k-amber' },
+      { v: gs.overdue, s:'просроченных д/з', c: gs.overdue ? 'k-red' : 'k-green' },
+    ];
+    return `<section class="kpis">${cells.map(x =>
+      `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
+  }
+
+  function membersHTML() {
+    if (!gs.members.length) return `<section class="card">
+      <div class="head"><h2>Участники</h2></div>
+      ${UI.empty('Группа пустая', 'Раздайте ссылку-приглашение — ученики добавятся сами.')}</section>`;
+    const rows = gs.members.map(m => `
+      <tr>
+        <td><div class="csp-u-012">${UI.avatar(m.member.user.name)}
+          <div><b>${UI.esc(m.member.user.name)}</b>
+            <div class="muted small">${m.member.profile.grade} класс · с ${C.fmtDate(m.member.joinedAt)}${
+              m.member.source === 'invite-accepted' ? ' · по ссылке' : ''}</div></div></div></td>
+        <td class="num ${UI.pctClass(m.kpi.accuracy)}">${m.kpi.accuracy == null ? '—' : m.kpi.accuracy + '%'}</td>
+        <td class="num">${m.kpi.solvedWeek}</td>
+        <td class="num ${UI.pctClass(m.attendance.percent)}">${
+          m.attendance.percent == null ? '—' : m.attendance.percent + '%'}</td>
+        <td class="num">${m.kpi.overdue ? `<span class="badge b-red">${m.kpi.overdue}</span>` : '<span class="muted">0</span>'}</td>
+        <td class="muted small">${m.weak ? UI.esc(m.weak.topic.name) + ' · ' + m.weak.percent + '%' : '—'}</td>
+        <td class="num"><a class="btn sm ghost" href="stats.html?student=${m.member.studentId}&subject=${g.subjectId}">Статистика</a></td>
+      </tr>`).join('');
+    return `<section class="card">
+      <div class="head"><div><h2>Участники</h2>
+        <div class="hint">Статистика считается по каждому отдельно — группа только контейнер</div></div></div>
+      <table><thead><tr>
+        <th>Ученик</th><th class="num">Верных</th><th class="num">За неделю</th>
+        <th class="num">Посещ.</th><th class="num">Просрочки</th><th>Слабая тема</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></section>`;
+  }
+
+  function lessonsHTML() {
+    if (!gs.lessons.length) return '';
+    const rows = gs.lessons.slice().reverse().slice(0, 6).map(l => {
+      const present = C.membersOf(g.id).filter(m => {
+        const st = C.attendanceOf(l.id, m.studentId);
+        return st === 'present' || st === 'late';
+      }).length;
+      const past = new Date(l.startsAt).getTime() < Date.now();
+      return `<div class="row">
+        <span class="badge ${l.status === 'done' ? 'b-green' : l.status === 'planned' ? 'b-blue' : 'b-grey'}">${
+          l.status === 'done' ? 'проведено' : l.status === 'planned' ? 'запланировано' : l.status}</span>
+        <span class="grow"><span class="t">${C.relDay(l.startsAt) || C.fmtDate(l.startsAt)} в ${C.fmtTime(l.startsAt)}</span>
+          <span class="s">${l.durationMin} мин · ${(l.taskIds||[]).length}
+            ${C.plural((l.taskIds||[]).length,'задание','задания','заданий')}</span></span>
+        <span class="r">${past ? present + ' из ' + gs.size + ' были' : 'впереди'}
+          <br><a href="lesson.html?lesson=${l.id}">открыть</a></span></div>`;
+    }).join('');
+    return `<div class="card">
+      <div class="head"><h2>Занятия группы</h2><span class="muted small">${g.schedule}</span></div>
+      <div class="row-list">${rows}</div></div>`;
+  }
+
+  function assignmentsHTML() {
+    if (!gs.assignments.length) return `<div class="card">
+      <div class="head"><h2>Задания группы</h2></div>
+      ${UI.empty('Заданий нет', 'Групповое д/з разворачивается в попытку на каждого участника.')}</div>`;
+    const rows = gs.assignments.map(a => {
+      const per = gs.members.map(m => C.decorateAssignment(a, m.member.studentId));
+      const doneAll = per.filter(x => x.status === 'checked').length;
+      const overdue = per.filter(x => x.status === 'overdue').length;
+      return `<div class="row">
+        <span class="grow"><span class="t">${UI.esc(a.title)}</span>
+          <span class="s">${a.taskIds.length} ${C.plural(a.taskIds.length,'задача','задачи','задач')}
+            · сдали ${doneAll} из ${gs.size}${overdue ? ' · просрочили ' + overdue : ''}</span></span>
+        <span class="r">до ${C.fmtDate(a.dueAt)}</span></div>`;
+    }).join('');
+    return `<div class="card">
+      <div class="head"><h2>Задания группы</h2></div>
+      <div class="row-list">${rows}</div>
+      <div class="note n-grey csp-u-053">
+        Одно задание — одна запись. Прогресс у каждого свой, поэтому статистика не смешивается.
+      </div></div>`;
+  }
+
+  function inviteHTML() {
+    if (!invite) return `<div class="card">
+      <div class="head"><h2>Набор в группу</h2></div>
+      ${UI.empty('Активной ссылки нет', 'Создайте приглашение на странице репетитора.')}
+      <a class="btn ghost sm csp-u-053" href="/invites.html">К приглашениям</a></div>`;
+    const url = C.inviteUrl(invite.code);
+    const left = invite.maxUses == null ? '∞' : Math.max(0, invite.maxUses - invite.usedCount);
+    return `<div class="card">
+      <div class="head"><h2>Ссылка для вступления</h2><span class="badge b-green">активна</span></div>
+      <div class="editor csp-u-046">
+        <div class="ehead"><span>код ${UI.esc(invite.code)}</span><span>переходов: ${invite.usedCount}</span></div>
+        <pre class="csp-u-064">${UI.esc(url)}</pre>
+      </div>
+      <div class="csp-u-022">
+        <button class="btn sm" id="copy">Скопировать ссылку</button>
+        <a class="btn sm ghost" href="invite.html?code=${encodeURIComponent(invite.code)}">Посмотреть глазами ученика</a>
+      </div>
+      <div class="hint csp-u-053">
+        Осталось мест по ссылке: ${left}${invite.expiresAt ? ' · до ' + C.fmtDate(invite.expiresAt) : ''}
+      </div></div>`;
+  }
+
+  UI.page({
+    session: ses,
+    active:'groups',
+    head:{ title: g.title,
+      sub:`${UI.esc(gs.subject.name)} · ${g.level} · ${g.schedule}`,
+      actions:`<a class="btn ghost" href="/groups.html">Все группы</a>` },
+    body:`${kpiHTML()}
+      ${membersHTML()}
+      <div class="cols c2 csp-u-054">${lessonsHTML()}${assignmentsHTML()}</div>
+      <div class="cols c2 csp-u-054">${inviteHTML()}
+        <div class="note n-blue">
+          <b>Как группа устроена в модели.</b><br>
+          <code>Group</code> — контейнер: репетитор, предмет, расписание, вместимость.<br>
+          <code>GroupMember</code> — участие ученика с датой и статусом.<br>
+          Занятие адресуется группе (<code>groupId</code>), посещаемость пишется
+          по каждому ученику отдельно — <code>LessonAttendance</code>.<br>
+          Статистика не групповая: она всегда по ученику, через <code>TaskAttempt</code>.
+          Поэтому ученик может одновременно быть в группе и заниматься индивидуально,
+          и цифры не задвоятся.
+        </div>
+      </div>`,
+  });
+
+  const cp = document.getElementById('copy');
+  if (cp) cp.addEventListener('click', () => UI.copy(C.inviteUrl(invite.code), cp));
+})();
