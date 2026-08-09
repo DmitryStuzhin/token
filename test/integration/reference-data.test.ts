@@ -50,7 +50,7 @@ void test('PostgreSQL reference data is idempotent and repairs subjectless tutor
     const topics = (await query('SELECT count(*)::integer count FROM topics')).rows as Array<{
       count: number;
     }>;
-    assert.equal(topics.at(0)?.count, 16);
+    assert.equal(topics.at(0)?.count, 17);
     const tutorSubjects = (
       await query(
         `SELECT s.code FROM tutor_subjects ts JOIN subjects s ON s.id=ts.subject_id
