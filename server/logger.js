@@ -1,6 +1,16 @@
 const crypto = require('crypto');
 
 const LEVEL_WEIGHT = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
+const SENSITIVE_KEY = /pass(word)?|token|cookie|authorization|answer|email|phone|secret/i;
+
+function redact(value, key = '', seen = new WeakSet()) {
+  if (SENSITIVE_KEY.test(key)) return '[REDACTED]';
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[CIRCULAR]';
+  seen.add(value);
+  if (Array.isArray(value)) return value.map(item => redact(item, '', seen));
+  return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redact(item, name, seen)]));
+}
 
 function createLogger(level = 'info', sink = console) {
   const threshold = LEVEL_WEIGHT[level] == null ? LEVEL_WEIGHT.info : LEVEL_WEIGHT[level];
@@ -11,7 +21,7 @@ function createLogger(level = 'info', sink = console) {
       timestamp: new Date().toISOString(),
       level: logLevel,
       message,
-      ...fields,
+      ...redact(fields),
     };
     const output = JSON.stringify(payload);
     const method = logLevel === 'error' ? 'error' : logLevel === 'warn' ? 'warn' : 'log';
@@ -50,4 +60,4 @@ function requestContext(logger) {
   };
 }
 
-module.exports = { createLogger, requestContext };
+module.exports = { createLogger, requestContext, redact };

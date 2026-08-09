@@ -19,8 +19,8 @@ export function validateRegistration(input: RegistrationData): RegistrationData 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.email)) {
     throw new DomainError('VALIDATION_ERROR', 'Похоже, email введён с ошибкой');
   }
-  if (value.password.length < 4) {
-    throw new DomainError('VALIDATION_ERROR', 'Пароль — минимум 4 символа');
+  if (value.password.length < 10) {
+    throw new DomainError('VALIDATION_ERROR', 'Пароль — минимум 10 символов');
   }
   return value;
 }

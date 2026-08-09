@@ -17,9 +17,12 @@ test('production cookies are secure by default', () => {
   const config = loadConfig({
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://token:secret@127.0.0.1:5432/token',
+    PUBLIC_ORIGIN: 'https://tokenapp.ru',
   });
   assert.equal(config.cookieSecure, true);
   assert.equal(config.databaseDriver, 'postgres');
+  assert.equal(config.publicOrigin, 'https://tokenapp.ru');
+  assert.equal(config.trustProxy, true);
 });
 
 test('invalid configuration fails during startup', () => {
@@ -28,4 +31,7 @@ test('invalid configuration fails during startup', () => {
   assert.throws(() => loadConfig({ NODE_ENV: 'test', COOKIE_SECURE: 'yes' }), /COOKIE_SECURE/);
   assert.throws(() => loadConfig({ NODE_ENV: 'test', SQL_METRICS: '1' }), /SQL_METRICS/);
   assert.throws(() => loadConfig({ NODE_ENV: 'production' }), /DATABASE_URL/);
+  assert.throws(() => loadConfig({
+    NODE_ENV: 'production', DATABASE_URL: 'postgresql://token:secret@localhost/token',
+  }), /PUBLIC_ORIGIN/);
 });

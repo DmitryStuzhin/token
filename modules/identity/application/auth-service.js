@@ -1,13 +1,21 @@
 const crypto = require('node:crypto');
 const { v7: uuidv7 } = require('uuid');
+const argon2 = require('@node-rs/argon2');
 
 const SESSION_DAYS = 30;
 
-function hashPassword(password, salt) {
-  const value = salt || crypto.randomBytes(16).toString('hex');
-  return { hash: crypto.scryptSync(String(password), value, 64).toString('hex'), salt: value };
+async function hashPassword(password) {
+  const hash = await argon2.hash(String(password), {
+    algorithm: argon2.Algorithm.Argon2id,
+    memoryCost: 19_456,
+    timeCost: 2,
+    parallelism: 1,
+    outputLen: 32,
+  });
+  return { hash, salt: '' };
 }
-function verifyPassword(password, hash, salt) {
+async function verifyPassword(password, hash, salt) {
+  if (String(hash).startsWith('$argon2id$')) return argon2.verify(hash, String(password));
   const actual = crypto.scryptSync(String(password), salt, 64);
   const expected = Buffer.from(hash, 'hex');
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
@@ -28,12 +36,12 @@ class AuthService {
     if (name.length < 2) return { error: 'Укажите имя и фамилию' };
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       return { error: 'Похоже, email введён с ошибкой' };
-    if (password.length < 4) return { error: 'Пароль — минимум 4 символа' };
+    if (password.length < 10) return { error: 'Пароль — минимум 10 символов' };
     if (!this.roles[role]) return { error: 'Выберите роль' };
     if (!this.roles[role].enabled)
       return { error: `Роль «${this.roles[role].label}» пока недоступна` };
     if (await this.store.emailExists(email)) return { error: 'Такой email уже зарегистрирован' };
-    const { hash, salt } = hashPassword(password);
+    const { hash, salt } = await hashPassword(password);
     const createdAt = new Date().toISOString();
     const user = await this.store.createUser({
       id: uuidv7(),
@@ -62,8 +70,12 @@ class AuthService {
         .toLowerCase(),
     );
     if (!user) return { error: 'Пользователь с таким email не найден' };
-    if (!verifyPassword(password, user.pass_hash, user.pass_salt))
+    if (!(await verifyPassword(password, user.pass_hash, user.pass_salt)))
       return { error: 'Неверный пароль' };
+    if (!String(user.pass_hash).startsWith('$argon2id$')) {
+      const upgraded = await hashPassword(password);
+      await this.store.updatePassword(user.id, upgraded);
+    }
     return { user };
   }
   async createSession(userId, userAgent) {

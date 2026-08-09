@@ -58,7 +58,7 @@ const listQuerySchema = z.object({
 });
 
 const bodySchemas = [
-  [/^\/auth\/register$/, z.object({ name:z.string().min(2).max(200), email:z.email(), password:z.string().min(4).max(200), role:z.enum(['student','tutor']), phone:z.string().max(50).optional(), tz:z.string().max(100).optional(), grade:z.coerce.number().int().min(1).max(11).optional(), school:z.string().max(300).optional(), subjects:z.array(z.string()).max(20).optional(), yearsExp:z.coerce.number().min(0).max(80).optional(), rate:z.coerce.number().min(0).optional(), meetingUrl:z.string().max(2000).optional() })],
+  [/^\/auth\/register$/, z.object({ name:z.string().min(2).max(200), email:z.email(), password:z.string().min(10).max(200), role:z.enum(['student','tutor']), phone:z.string().max(50).optional(), tz:z.string().max(100).optional(), grade:z.coerce.number().int().min(1).max(11).optional(), school:z.string().max(300).optional(), subjects:z.array(z.string()).max(20).optional(), yearsExp:z.coerce.number().min(0).max(80).optional(), rate:z.coerce.number().min(0).optional(), meetingUrl:z.string().max(2000).optional() })],
   [/^\/auth\/login$/, z.object({ email:z.email(), password:z.string().min(1).max(200) })],
   [/^\/invites$/, z.object({ kind:z.enum(['enrollment','group']), subjectId:z.string().optional(), groupId:z.string().optional(), maxUses:z.number().int().min(1).max(10000).nullable().optional(), expiresAt:z.iso.datetime().nullable().optional(), note:z.string().max(2000).optional() })],
   [/^\/invites\/accept$/, z.object({ code:z.string().min(3).max(100) })],
