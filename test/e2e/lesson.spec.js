@@ -154,8 +154,14 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   });
 
   tutorPage.once('dialog', (dialog) => dialog.accept());
-  await tutorPage.getByRole('button', { name: 'Завершить' }).click();
+  await tutorPage.getByRole('button', { name: 'Завершить занятие' }).click();
   await expect(tutorPage).toHaveURL(/\/tutor\.html\?completed=/);
+  await expect(tutorPage.locator('#completed-notice')).toContainText('Занятие завершено и сохранено');
+  await expect(tutorPage.getByRole('link', { name: 'Вести' })).toHaveCount(0);
+  await tutorPage.goto(`/lesson.html?lesson=${lesson.id}`);
+  await expect(tutorPage.getByText('Занятие завершено', { exact:true })).toBeVisible();
+  await expect(tutorPage.getByRole('button', { name: 'Завершить занятие' })).toHaveCount(0);
+  await expect(tutorPage.getByRole('link', { name: 'Назначить новое' })).toBeVisible();
   await tutorPage.goto('/lesson.html');
   await expect(tutorPage.getByText('Занятий пока нет')).toBeVisible();
   await expect(tutorPage.getByText('Тестовый Ученик')).toHaveCount(0);

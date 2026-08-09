@@ -184,9 +184,13 @@
   }
   function header() {
     const call = (lesson.links || []).find(link => link.type === 'call');
+    const completed = lesson.status === 'done';
     const who = group ? `группа «${esc(group.title)}» · ${roster.length} участников` : tutor ? esc((userOf(selectedStudent) || {}).name || 'Ученик') : `репетитор · ${esc((((C.tutorOf(session.studentId, lesson.subjectId) || {}).user || {}).name) || '—')}`;
-    return `<header class="lesson-head"><div class="lesson-identity"><i class="${C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${esc(subject.name)} · ${who}</strong><span>${C.fmtDateFull(lesson.startsAt)} · ${C.fmtTime(lesson.startsAt)} · ${lesson.durationMin} мин</span></div></div>
-      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutor && lesson.status !== 'done' ? '<button class="button ghost" id="finish-lesson">Завершить</button>' : ''}</div></header>`;
+    const tutorAction = !tutor ? '' : completed
+      ? '<span class="lesson-completed" role="status">Занятие завершено</span><a class="button primary" href="/tutor.html?new=lesson">Назначить новое</a>'
+      : '<button class="button finish-button" id="finish-lesson">Завершить занятие</button>';
+    return `<header class="lesson-head"><div class="lesson-identity"><i class="${completed ? 'done' : C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${esc(subject.name)} · ${who}</strong><span>${C.fmtDateFull(lesson.startsAt)} · ${C.fmtTime(lesson.startsAt)} · ${lesson.durationMin} мин${completed ? ' · завершено' : ''}</span></div></div>
+      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
   }
   function render() {
     document.body.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
@@ -217,7 +221,7 @@
         await Api.setLessonStatus(lesson.id, 'done');
         location.href = `/tutor.html?completed=${encodeURIComponent(lesson.id)}`;
       } catch (error) {
-        button.disabled = false; button.textContent = 'Завершить';
+        button.disabled = false; button.textContent = 'Завершить занятие';
         alert(error.message || 'Не удалось завершить занятие');
       }
     });

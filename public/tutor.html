@@ -21,7 +21,9 @@
   const T = ses.tutorId;
   const tp = C.tutorProfile(T);
   const me = C.user(tp.userId);
-  const today = C.tutorToday(T);
+  const todayAll = C.tutorToday(T);
+  const today = todayAll.filter(l => l.status === 'planned');
+  const completedToday = todayAll.filter(l => l.status === 'done');
   const queue = C.reviewQueue(T);
   const sids = C.studentsOfTutor(T);
   const groups = C.groupsOfTutor(T);
@@ -36,7 +38,7 @@
     const overdue = sids.reduce((s, sid) =>
       s + C.assignmentsOf(sid).filter(a => a.status === 'overdue').length, 0);
     const cells = [
-      { v: today.length,  s:'занятий сегодня', c:'k-blue' },
+      { v: todayAll.length,  s:'занятий сегодня', c:'k-blue' },
       { v: queue.length,  s:'работ на проверке', c: queue.length ? 'k-amber' : 'k-green' },
       { v: sids.length,   s:'учеников', c:'k-violet' },
       { v: groups.length, s:'групп', c:'k-green' },
@@ -76,11 +78,14 @@
       : UI.empty('Занятий сегодня нет', sids.length
           ? 'Назначьте занятие ученику или группе.'
           : 'Сначала пригласите ученика — вкладка «Приглашения».');
+    const completedNotice = UI.qs('completed')
+      ? `<div class="note n-green" id="completed-notice" role="status">Занятие завершено и сохранено. Сегодня проведено: ${completedToday.length}.</div>`
+      : '';
     return `<section class="card">
       <div class="head"><div><h2>Сегодня</h2>
         <div class="hint">${C.fmtDateFull(Date.now())}</div></div>
         ${sids.length ? '<button class="btn sm" id="newlesson">Назначить занятие</button>' : ''}</div>
-      ${body}
+      ${completedNotice}${body}
       <div id="lessonform"></div></section>`;
   }
 
@@ -173,6 +178,7 @@
       } catch (e) { alert(e.message); }
     });
   });
+  if (nl && UI.qs('new') === 'lesson') nl.click();
 })();
 </script>
 </body>
