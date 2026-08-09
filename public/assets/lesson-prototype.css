@@ -128,7 +128,33 @@
 .editor-footer .editor-status{flex:1;border-top:0;min-width:220px;background:transparent}
 .student-answer{border-top:0;background:transparent;padding:7px 10px;align-items:center}.student-answer button{border:0;border-radius:9px;padding:8px 11px;background:var(--brand);color:#fff;font-size:12px;font-weight:700;cursor:pointer}.student-answer button:disabled{opacity:.55;cursor:not-allowed}
 .answer-copy{color:var(--muted);font-size:11px}.tutor-attempt-meta{padding:8px 12px;display:flex;gap:9px;flex-wrap:wrap;color:var(--muted);font-size:11px}.tutor-attempt-meta span{padding:4px 7px;border-radius:6px;background:var(--panel)}
-.runtime-heat .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(var(--task-count),minmax(58px,1fr)) 70px}
+.runtime-heat .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(1,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-2 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(2,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-3 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(3,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-4 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(4,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-5 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(5,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-6 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(6,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-7 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(7,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-8 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(8,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-9 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(9,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-10 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(10,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-11 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(11,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-12 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(12,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-13 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(13,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-14 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(14,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-15 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(15,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-16 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(16,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-17 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(17,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-18 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(18,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-19 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(19,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-20 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(20,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-21 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(21,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-22 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(22,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-23 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(23,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-24 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(24,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-25 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(25,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-26 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(26,minmax(58px,1fr)) 70px}
+.runtime-heat.tasks-27 .heat-row{grid-template-columns:34px minmax(150px,1.4fr) repeat(27,minmax(58px,1fr)) 70px}
 .runtime-heat .student-name{border:0;background:transparent;color:inherit;text-align:start;cursor:pointer;min-width:0}.runtime-heat .cell{cursor:pointer}.group-head{padding:13px;margin:0}
 .runtime-form{display:grid;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .runtime-form input,.runtime-form select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--text)}

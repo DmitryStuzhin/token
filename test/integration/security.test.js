@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const request = require('supertest');
 
 const { createApp } = require('../../server/app.js');
@@ -23,7 +25,15 @@ test('production responses enforce transport, framing and origin protections', a
   assert.equal(page.status, 200);
   assert.match(page.headers['strict-transport-security'], /max-age=31536000/);
   assert.match(page.headers['content-security-policy'], /frame-ancestors 'none'/);
+  assert.doesNotMatch(page.headers['content-security-policy'], /unsafe-inline|unsafe-eval/);
+  assert.match(page.headers['content-security-policy'], /style-src-attr 'none'/);
   assert.equal(page.headers['x-content-type-options'], 'nosniff');
+
+  const runner = await request(app).get('/python-runner.html');
+  assert.equal(runner.status, 302);
+  assert.match(runner.headers['content-security-policy'], /default-src 'none'/);
+  assert.match(runner.headers['content-security-policy'], /script-src https:\/\/tokenapp\.ru 'unsafe-eval'/);
+  assert.match(runner.headers['content-security-policy'], /frame-ancestors 'self'/);
 
   const rejected = await request(app).post('/api/v1/auth/login').send({
     email:'nobody@example.test', password:'test-password',
@@ -35,6 +45,31 @@ test('production responses enforce transport, framing and origin protections', a
     .set('Origin', 'https://tokenapp.ru')
     .send({ email:'nobody@example.test', password:'test-password' });
   assert.equal(acceptedOrigin.status, 401);
+});
+
+test('frontend sources do not contain inline scripts, styles or event handlers', () => {
+  const publicRoot = path.join(__dirname, '..', '..', 'public');
+  const htmlFiles = fs.readdirSync(publicRoot).filter(file => file.endsWith('.html'));
+  for (const file of htmlFiles) {
+    const source = fs.readFileSync(path.join(publicRoot, file), 'utf8');
+    assert.doesNotMatch(source, /<script(?![^>]*\bsrc=)/i, file);
+    assert.doesNotMatch(source, /<style\b|\sstyle\s*=|\son[a-z]+\s*=/i, file);
+  }
+
+  const scriptRoots = [
+    path.join(publicRoot, 'assets', 'ui.js'),
+    path.join(publicRoot, 'assets', 'lesson-runtime.js'),
+    ...fs.readdirSync(path.join(publicRoot, 'assets', 'pages'))
+      .map(file => path.join(publicRoot, 'assets', 'pages', file)),
+  ];
+  for (const file of scriptRoots) {
+    const source = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /\sstyle\s*=|\son(?:click|change|input|submit|load|error|dblclick|pointer[a-z]*|mouse[a-z]*|key[a-z]*)\s*=/i,
+      file,
+    );
+  }
 });
 
 test('authentication endpoints are rate limited', async () => {

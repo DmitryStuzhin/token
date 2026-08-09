@@ -1,0 +1,25 @@
+  .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 18px}
+  .auth-box{width:100%;max-width:460px}
+  .auth h1{font-size:30px;text-align:center;margin-bottom:6px}
+  .auth .lead{text-align:center;color:var(--muted);font-size:14px;margin-bottom:24px}
+  .tabs{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);
+    border-radius:99px;padding:4px;margin-bottom:18px}
+  .tabs button{flex:1;background:transparent;border:0;color:var(--muted);padding:10px;
+    border-radius:99px;font:inherit;font-weight:650;cursor:pointer}
+  .tabs button.on{background:var(--brand);color:#fff}
+  .fld{margin-bottom:13px}
+  .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .fld input,.fld select{width:100%;padding:12px 14px;border:1.5px solid var(--line);
+    border-radius:11px;background:var(--panel);color:var(--text);font:inherit}
+  .fld input:focus,.fld select:focus{outline:0;border-color:var(--brand)}
+  .roles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+  .role{border:1.5px solid var(--line);border-radius:12px;padding:12px 10px;cursor:pointer;
+    background:var(--panel);text-align:center}
+  .role b{display:block;font-size:14px;margin-bottom:3px}
+  .role span{font-size:11px;color:var(--muted);line-height:1.35;display:block}
+  .role.on{border-color:var(--brand);background:var(--brand-soft)}
+  .role.off{opacity:.5;cursor:not-allowed}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .quick a{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:11px;text-decoration:none;color:inherit;margin-bottom:8px}
+  .quick a:hover{border-color:var(--brand)}

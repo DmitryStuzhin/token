@@ -22,8 +22,16 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   const tutorPage = await tutorContext.newPage();
   const studentPage = await studentContext.newPage();
   const pageErrors = [];
+  const cspErrors = [];
   tutorPage.on('pageerror', (error) => pageErrors.push(`tutor: ${error.message}`));
   studentPage.on('pageerror', (error) => pageErrors.push(`student: ${error.message}`));
+  for (const [role, activePage] of [['tutor', tutorPage], ['student', studentPage]]) {
+    activePage.on('console', message => {
+      if (/content security policy|refused to (execute|apply|load|frame)/i.test(message.text())) {
+        cspErrors.push(`${role}: ${message.text()}`);
+      }
+    });
+  }
 
   await register(tutorContext.request, fixture.tutor, 'lesson-tutor');
   await register(studentContext.request, fixture.student, 'lesson-student');
@@ -215,5 +223,6 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   await tutorPage.screenshot({ path: '/tmp/token-production-group-focus.png', fullPage: true });
 
   expect(pageErrors).toEqual([]);
+  expect(cspErrors).toEqual([]);
   await Promise.all([tutorContext.close(), studentContext.close(), secondContext.close()]);
 });
