@@ -18,6 +18,8 @@ tags: [тип/архитектура, статус/в-работе]
 - установлен Docker 29.1.3 и Docker Compose 2.40.3;
 - включён UFW: вход разрешён только на TCP 22, 80 и 443;
 - зарегистрирован домен `tokenapp.ru`, оплачен до 2027-08-09.
+- production-контур описан в `Dockerfile`, `infra/compose/production.yml` и
+  `infra/compose/Caddyfile`; наружу публикуются только Caddy 80/443.
 
 ## Целевой состав первого контура
 

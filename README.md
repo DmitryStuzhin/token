@@ -31,6 +31,21 @@ Docker. `npm run db:down` останавливает контейнер без �
 
 Проверки состояния: `GET /health/live` и `GET /health/ready`.
 
+## Production Compose
+
+Боевой контур описан в `infra/compose/production.yml`: приложение и PostgreSQL
+доступны только во внутренней Docker-сети, наружу опубликованы только Caddy на
+80/443. Caddy автоматически выпускает и обновляет бесплатный TLS-сертификат.
+
+```bash
+cp infra/compose/production.env.example infra/compose/production.env
+# заменить email и оба вхождения пароля PostgreSQL
+docker compose --env-file infra/compose/production.env \
+  -f infra/compose/production.yml up -d --build
+```
+
+`infra/compose/production.env` содержит секреты и игнорируется Git.
+
 ## С чего начать
 
 База пустая: ни одного пользователя. Всё появляется после регистрации.
