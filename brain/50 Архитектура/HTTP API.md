@@ -1,54 +1,45 @@
 ---
-aliases: [api.js, маршруты, REST]
+aliases: [api-v1.js, маршруты, REST, OpenAPI]
 tags: [тип/архитектура, статус/готово]
-источник: server/api.js
+источник: server/api-v1.js
+обновлено: 2026-08-09
 ---
 
 # HTTP API
 
-> 26 маршрутов. Каждый проверяет роль и владение объектом.
+> Версионированный контракт. Каждый маршрут проверяет роль и владение объектом.
 
-## Состояние
+## Контракт v1
 
-| метод | путь | кто |
-|---|---|---|
-| GET | `/api/state` | любой |
-| GET | `/api/state.js` | любой — тот же срез как `<script>` |
+`docs/openapi.v1.yaml` — OpenAPI 3.1 и единственный источник типов клиента.
+`packages/api-client` генерируется командой `npm run api:generate`. Ошибки имеют
+`application/problem+json`, а входящие тела проверяются Zod до domain service.
 
-## Аутентификация
+## Чтение
 
-`GET /api/auth/roles` · `POST /api/auth/register` · `POST /api/auth/login`
-`POST /api/auth/logout` · `GET /api/auth/me`
+- `/api/v1/screens/:screen[.js]` — минимальный DTO для одного из 16 экранов;
+- `/api/v1/{invites,groups,students,lessons,assignments,attempts,reviews,tasks}` —
+  ресурсные списки с opaque cursor, `limit ≤ 100`, фильтрами и сортировкой;
+- `/api/v1/me`, `/api/v1/profile`, `/api/v1/lessons/:id` — адресное чтение;
+- все чтения поддерживают `ETag` и условный `If-None-Match`.
 
-## Банк задач
+Frontend больше не вызывает `/api/state.js`. Legacy API временно сохранён под
+`/api` для rollback и постепенно удаляется после периода наблюдения.
 
-`GET /api/tasks` (без ответов) · `POST /api/tasks/import` — [[Репетитор]]
+## Команды
 
-## Приглашения
+Существующие учебные команды доступны под `/api/v1`. Создание приглашения,
+группы, занятия, задания, импорт задач и принятие приглашения требуют
+`Idempotency-Key`. PostgreSQL хранит hash запроса и результат: точный повтор
+возвращает прежний ответ, а повтор ключа с другим телом отклоняется.
 
-`POST /api/invites` · `POST /api/invites/:id/revoke` — [[Репетитор]]
-`GET /api/invites/:code` — любой вошедший
-`POST /api/invites/accept` — [[Ученик]]
+`PATCH /api/v1/lessons/:id` требует `If-Match: "vN"`. Отсутствующий precondition
+даёт 428, устаревшая версия — 412, успешная запись повышает `version`.
 
-## Занятия и группы — [[Репетитор]]
+## Read-модели
 
-`POST /api/groups`
-`POST /api/lessons`
-`POST|DELETE /api/lessons/:id/links[/:index]`
-`POST|DELETE /api/lessons/:id/tasks[/:taskId]`
-`POST /api/lessons/:id/status`
-`POST /api/assignments`
-
-## Работы
-
-`POST /api/attempts/:id/progress` — [[Ученик]], своя попытка
-`POST /api/attempts/:id/answer` — сверка на сервере
-`POST /api/attempts/:id/submit` — на ручную проверку
-`POST /api/attempts/:id/review` — [[Репетитор]]
-
-## Прочее
-
-`POST /api/prefs` — [[NotificationPref]]
+`/api/v1/read-models/{student-dashboard,tutor-today,assignment-progress,student-subject-stats}`.
+Подробнее: [[Read-модели API v1]].
 
 ## Правило
 
@@ -57,4 +48,4 @@ tags: [тип/архитектура, статус/готово]
 
 ## Связи
 
-[[Разделение доступа]] · [[Клиент]] · [[Безопасность]]
+[[Разделение доступа]] · [[Клиент]] · [[Безопасность]] · [[ADR-012 Контекстный API v1]]

@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════
    СНИМОК СОСТОЯНИЯ НА КЛИЕНТЕ
 
-   Данные приходят с сервера в /api/state.js — обычным тегом <script>,
+   Данные приходят из специализированного /api/v1/screens/{screen}.js,
    поэтому страница стартует синхронно и без мигания пустым экраном.
    Здесь только чтение: любое изменение уходит на сервер через Api.
    ═══════════════════════════════════════════════════════════════════ */
@@ -20,9 +20,12 @@
   window.Store = {
     state,
     async refresh() {
-      const r = await fetch('/api/state', { credentials:'same-origin' });
+      const screen = window.__SCREEN__ || 'index';
+      const r = await fetch('/api/v1/screens/' + encodeURIComponent(screen), {
+        credentials:'same-origin', headers:{ Accept:'application/json' },
+      });
       if (!r.ok) throw new Error('Не удалось обновить данные');
-      const fresh = await r.json();
+      const fresh = (await r.json()).state;
       Object.keys(fresh).forEach(k => { state[k] = fresh[k]; });
       window.Core = window.createCore(state);
       return state;

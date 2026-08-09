@@ -12,12 +12,15 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 const Domain = require('../shared/domain.js');
+const { loadConfig } = require('./config.js');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
-const FILE = process.env.TOKEN_DB || path.join(DATA_DIR, 'token.db');
+const config = loadConfig();
+const FILE = config.databaseFile;
+let sqlQueryCount = 0;
 
-const db = new Database(FILE);
+const db = new Database(FILE, config.sqlMetrics ? { verbose: () => { sqlQueryCount += 1; } } : {});
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -74,12 +77,14 @@ CREATE TABLE IF NOT EXISTS invites (
   id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
   tutor_id TEXT, subject_id TEXT, group_id TEXT, student_id TEXT,
   created_by TEXT, created_at TEXT, expires_at TEXT,
-  max_uses INTEGER, used_count INTEGER DEFAULT 0, status TEXT, note TEXT);
+  max_uses INTEGER, used_count INTEGER DEFAULT 0, status TEXT, note TEXT,
+  version INTEGER NOT NULL DEFAULT 1);
 
 CREATE TABLE IF NOT EXISTS lessons (
   id TEXT PRIMARY KEY, subject_id TEXT NOT NULL, tutor_id TEXT NOT NULL,
   enrollment_id TEXT, group_id TEXT, starts_at TEXT NOT NULL,
-  duration_min INTEGER, status TEXT, links TEXT, task_ids TEXT, note TEXT);
+  duration_min INTEGER, status TEXT, links TEXT, task_ids TEXT, note TEXT,
+  version INTEGER NOT NULL DEFAULT 1);
 CREATE INDEX IF NOT EXISTS idx_lessons_tutor ON lessons(tutor_id, starts_at);
 
 CREATE TABLE IF NOT EXISTS lesson_attendance (
@@ -88,7 +93,8 @@ CREATE TABLE IF NOT EXISTS lesson_attendance (
 
 CREATE TABLE IF NOT EXISTS assignments (
   id TEXT PRIMARY KEY, subject_id TEXT NOT NULL, enrollment_id TEXT, group_id TEXT,
-  lesson_id TEXT, title TEXT NOT NULL, due_at TEXT, task_ids TEXT);
+  lesson_id TEXT, title TEXT NOT NULL, due_at TEXT, task_ids TEXT,
+  status TEXT NOT NULL DEFAULT 'published', version INTEGER NOT NULL DEFAULT 1);
 
 CREATE TABLE IF NOT EXISTS attempts (
   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, student_id TEXT NOT NULL,
@@ -96,7 +102,8 @@ CREATE TABLE IF NOT EXISTS attempts (
   code TEXT, answer TEXT, tries INTEGER DEFAULT 0,
   is_correct INTEGER, first_try_correct INTEGER, active_seconds INTEGER DEFAULT 0,
   status TEXT, started_at TEXT, submitted_at TEXT,
-  review_score INTEGER, review_comment TEXT, reviewed_by TEXT, reviewed_at TEXT);
+  review_score INTEGER, review_comment TEXT, reviewed_by TEXT, reviewed_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1);
 CREATE INDEX IF NOT EXISTS idx_att_student ON attempts(student_id);
 CREATE INDEX IF NOT EXISTS idx_att_lesson ON attempts(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_att_assignment ON attempts(assignment_id);
@@ -118,6 +125,21 @@ CREATE TABLE IF NOT EXISTS mock_exams (
   id TEXT PRIMARY KEY, student_id TEXT NOT NULL, subject_id TEXT NOT NULL,
   variant TEXT, date TEXT, items TEXT);
 `);
+
+/* Expand-миграции для существующих SQLite-файлов. Удаление и переименование
+   колонок намеренно не выполняются при старте приложения. */
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some(item => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+ensureColumn('invites', 'version', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('lessons', 'version', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('assignments', 'status', "TEXT NOT NULL DEFAULT 'published'");
+ensureColumn('assignments', 'version', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('attempts', 'version', 'INTEGER NOT NULL DEFAULT 1');
 
 /* ── заполнение справочников ─────────────────────────────────────── */
 function seedReference() {
@@ -163,11 +185,11 @@ const rowTutor   = r => ({ id:r.id, userId:r.user_id, subjects:J(r.subjects, [])
 const rowEnr     = r => ({ id:r.id, studentId:r.student_id, tutorId:r.tutor_id, subjectId:r.subject_id, status:r.status, startedAt:r.started_at, source:r.source, inviteId:r.invite_id });
 const rowGroup   = r => ({ id:r.id, tutorId:r.tutor_id, subjectId:r.subject_id, title:r.title, level:r.level, schedule:r.schedule, capacity:r.capacity, status:r.status, createdAt:r.created_at });
 const rowMember  = r => ({ groupId:r.group_id, studentId:r.student_id, joinedAt:r.joined_at, status:r.status, source:r.source, inviteId:r.invite_id });
-const rowInvite  = r => ({ id:r.id, code:r.code, kind:r.kind, tutorId:r.tutor_id, subjectId:r.subject_id, groupId:r.group_id, studentId:r.student_id, createdBy:r.created_by, createdAt:r.created_at, expiresAt:r.expires_at, maxUses:r.max_uses, usedCount:r.used_count, status:r.status, note:r.note });
-const rowLesson  = r => ({ id:r.id, subjectId:r.subject_id, tutorId:r.tutor_id, enrollmentId:r.enrollment_id, groupId:r.group_id, startsAt:r.starts_at, durationMin:r.duration_min, status:r.status, links:J(r.links, []), taskIds:J(r.task_ids, []), note:J(r.note, null) });
+const rowInvite  = r => ({ id:r.id, code:r.code, kind:r.kind, tutorId:r.tutor_id, subjectId:r.subject_id, groupId:r.group_id, studentId:r.student_id, createdBy:r.created_by, createdAt:r.created_at, expiresAt:r.expires_at, maxUses:r.max_uses, usedCount:r.used_count, status:r.status, note:r.note, version:r.version });
+const rowLesson  = r => ({ id:r.id, subjectId:r.subject_id, tutorId:r.tutor_id, enrollmentId:r.enrollment_id, groupId:r.group_id, startsAt:r.starts_at, durationMin:r.duration_min, status:r.status, links:J(r.links, []), taskIds:J(r.task_ids, []), note:J(r.note, null), version:r.version });
 const rowAtt     = r => ({ lessonId:r.lesson_id, studentId:r.student_id, status:r.status });
-const rowAsg     = r => ({ id:r.id, subjectId:r.subject_id, enrollmentId:r.enrollment_id, groupId:r.group_id, lessonId:r.lesson_id, title:r.title, dueAt:r.due_at, taskIds:J(r.task_ids, []) });
-const rowAttempt = r => ({ id:r.id, taskId:r.task_id, studentId:r.student_id, subjectId:r.subject_id, context:r.context, lessonId:r.lesson_id, assignmentId:r.assignment_id, groupId:r.group_id, code:r.code || '', answer:r.answer || '', tries:r.tries || 0, isCorrect: r.is_correct == null ? null : !!r.is_correct, firstTryCorrect: r.first_try_correct == null ? null : !!r.first_try_correct, activeSeconds:r.active_seconds || 0, status:r.status, startedAt:r.started_at, submittedAt:r.submitted_at, reviewScore:r.review_score, reviewComment:r.review_comment, reviewedAt:r.reviewed_at });
+const rowAsg     = r => ({ id:r.id, subjectId:r.subject_id, enrollmentId:r.enrollment_id, groupId:r.group_id, lessonId:r.lesson_id, title:r.title, dueAt:r.due_at, taskIds:J(r.task_ids, []), status:r.status, version:r.version });
+const rowAttempt = r => ({ id:r.id, taskId:r.task_id, studentId:r.student_id, subjectId:r.subject_id, context:r.context, lessonId:r.lesson_id, assignmentId:r.assignment_id, groupId:r.group_id, code:r.code || '', answer:r.answer || '', tries:r.tries || 0, isCorrect: r.is_correct == null ? null : !!r.is_correct, firstTryCorrect: r.first_try_correct == null ? null : !!r.first_try_correct, activeSeconds:r.active_seconds || 0, status:r.status, startedAt:r.started_at, submittedAt:r.submitted_at, reviewScore:r.review_score, reviewComment:r.review_comment, reviewedAt:r.reviewed_at, version:r.version });
 const rowGoal    = r => ({ studentId:r.student_id, subjectId:r.subject_id, targetScore:r.target_score, examDate:r.exam_date });
 const rowSub     = r => ({ id:r.id, studentId:r.student_id, payerUserId:r.payer_user_id, plan:r.plan, lessonsLeft:r.lessons_left, lessonsTotal:r.lessons_total, price:r.price, nextChargeAt:r.next_charge_at, status:r.status });
 const rowPref    = r => ({ userId:r.user_id, channel:r.channel, enabled:!!r.enabled, handle:r.handle, minutesBefore:r.minutes_before });
@@ -325,6 +347,10 @@ function snapshot(user) {
   return base;
 }
 
+const resetSqlMetrics = () => { sqlQueryCount = 0; };
+const getSqlMetrics = () => ({ statements: sqlQueryCount });
+
 module.exports = { db, all, one, snapshot, fullState, reference, publicTasks, taskWithAnswer,
+                   resetSqlMetrics, getSqlMetrics,
                    rows: { rowUser, rowStudent, rowTutor, rowEnr, rowGroup, rowMember,
                            rowInvite, rowLesson, rowAsg, rowAttempt, rowTask } };

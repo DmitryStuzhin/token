@@ -17,7 +17,12 @@ tags: [тип/сущность, роль/репетитор, роль/учени
 | `kind` | `enrollment` · `group` · `guardian` |
 | `tutor_id`, `subject_id`, `group_id` | куда именно зовут |
 | `expires_at`, `max_uses`, `used_count` | ограничения |
-| `status` | `active` · `used_up` · `revoked` |
+| `status` | `active` · `used_up` · `expired` · `revoked` |
+| `version` | optimistic concurrency; увеличивается при каждой записи |
+
+Автомат: `active → used_up | expired | revoked`; терминальные состояния не
+открываются повторно. Правило находится в
+`modules/relationships/domain/invite.ts`.
 
 ## Проверки при приёме
 
@@ -37,4 +42,4 @@ tags: [тип/сущность, роль/репетитор, роль/учени
 ## Связи
 
 [[Приглашение и привязка]] · [[Экран Приглашения]] · [[Экран Приглашение]] ·
-[[ADR-005 Привязка по приглашению]]
+[[ADR-005 Привязка по приглашению]] · [[Модульные границы]]

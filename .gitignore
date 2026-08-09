@@ -1,6 +1,15 @@
 node_modules/
+.env
+.env.*
+!.env.example
+infra/compose/production.env
 data/*.db
 data/*.db-*
+coverage/
+test-results/
+playwright-report/
+migration-reports/
+backups/
 .DS_Store
 *.log
 .vscode/

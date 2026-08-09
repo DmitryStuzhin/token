@@ -1,0 +1,11 @@
+node_modules
+data
+test-results
+playwright-report
+coverage
+public
+shared
+brain
+docs
+package-lock.json
+packages/api-client/src/generated.ts

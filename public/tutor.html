@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-<script src="/api/state.js"></script>
+<script src="/api/v1/screens/tutor.js"></script>
 <script src="/shared/core.js"></script>
 <script src="/assets/store.js"></script>
 <script src="/assets/api.js"></script>
@@ -162,12 +162,13 @@
       const when = document.getElementById('n-start').value;
       if (!when) { alert('Укажите дату и время'); return; }
       try {
-        const res = await Api.createLesson({
-          enrollmentId: kind === 'e' ? id : null,
-          groupId: kind === 'g' ? id : null,
+        const data = {
           startsAt: new Date(when).toISOString(),
           durationMin: +document.getElementById('n-dur').value || 60,
-        });
+        };
+        if (kind === 'e') data.enrollmentId = id;
+        else data.groupId = id;
+        const res = await Api.createLesson(data);
         location.href = '/lesson.html?lesson=' + res.id;
       } catch (e) { alert(e.message); }
     });
