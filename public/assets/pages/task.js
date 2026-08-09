@@ -6,6 +6,8 @@
   const taskId = UI.qs('task');
   const asgId  = UI.qs('assignment');
   const lesId  = UI.qs('lesson');
+  const practice = UI.qs('practice') === '1';
+  const attemptId = UI.qs('attempt');
   const t = C.task(taskId);
 
   if (!t) {
@@ -15,8 +17,10 @@
     return;
   }
 
-  const scope = asgId ? { assignmentId: asgId } : lesId ? { lessonId: lesId } : {};
-  const a = C.attemptFor(S, taskId, scope);
+  const scope = asgId ? { assignmentId: asgId } : lesId ? { lessonId: lesId } : practice ? { context:'practice' } : {};
+  const a = practice && attemptId
+    ? C.db.attempts.find(x => x.id === attemptId && x.studentId === S && x.taskId === taskId && x.context === 'practice')
+    : C.attemptFor(S, taskId, scope);
   if (!a) {
     UI.page({ session: ses, active:'hw', head:{ title:'Задача недоступна' },
       body:`<div class="card">${UI.empty('Эта задача вам не выдана',
@@ -25,10 +29,18 @@
   }
   const asg = asgId ? C.assignment(asgId) : null;
   const les = lesId ? C.lesson(lesId) : null;
-  const siblings = asg ? asg.taskIds : les ? (les.taskIds || []) : [taskId];
-  const backHref = asg ? 'homework.html#' + asg.id : les ? 'lesson.html' : 'homework.html';
+  const siblings = asg ? asg.taskIds : les ? (les.taskIds || []) : practice
+    ? C.db.tasks.filter(x => x.subjectId === t.subjectId && x.number === t.number).map(x => x.id)
+    : [taskId];
+  const backHref = asg ? 'homework.html#' + asg.id : les ? 'lesson.html' : practice
+    ? `student-bank.html?subject=${encodeURIComponent(t.subjectId)}&number=${t.number}` : 'homework.html';
 
   const locked = a.status === 'checked' || a.status === 'submitted';
+  const programming = t.taskType === 'programming';
+  const attachments = (t.attachments || []).filter(file => file && file.name && file.url &&
+    (/^https?:\/\//i.test(file.url) || file.url.startsWith('/')));
+  const attachmentsHTML = attachments.length ? `<div class="task-files"><b>Файлы к заданию</b>${attachments.map(file =>
+    `<a href="${UI.attr(encodeURI(file.url))}" target="_blank" rel="noopener" download><span>⇩</span><span class="grow">${UI.esc(file.name)}</span><small>${UI.esc(file.kind || 'файл')}</small></a>`).join('')}</div>` : '';
 
   /* ── разметка ───────────────────────────────────────────────── */
   function verdictHTML() {
@@ -49,6 +61,12 @@
       const mark = !at || at.status === 'issued' ? '○'
                  : at.status === 'in_progress' ? '◐'
                  : at.isCorrect === true ? '●' : at.isCorrect === false ? '✕' : '◍';
+      if (practice) {
+        const href = at ? `/task.html?task=${encodeURIComponent(id)}&practice=1&attempt=${encodeURIComponent(at.id)}` : '#';
+        return `<a href="${href}" class="${at ? '' : 'practice-nav'} ${id === taskId ? 'cur' : ''}" ${at ? '' : `data-task="${UI.attr(id)}"`}>
+          <span class="csp-u-075">${mark}</span>
+          <span class="grow">№${st ? st.number : '?'} · ${UI.esc(st ? st.title : id)}</span></a>`;
+      }
       const q = new URLSearchParams({ task:id });
       if (asgId) q.set('assignment', asgId); if (lesId) q.set('lesson', lesId);
       return `<a href="task.html?${q}" class="${id === taskId ? 'cur' : ''}">
@@ -67,30 +85,31 @@
             <div>
               <h2>№${t.number} · ${UI.esc(t.title)}</h2>
               <div class="hint">${UI.esc((C.topic(t.topicId) || {}).name || '')}
-                · сложность ${t.difficulty}/3
+                · сложность ${UI.difficultyHTML(t.difficulty)}
                 · ${t.autoCheck ? 'автопроверка' : 'проверяет репетитор'}</div>
             </div>
             <span class="badge ${t.autoCheck ? 'b-green' : 'b-amber'}">${t.autoCheck ? 'ответ' : 'код'}</span>
           </div>
-          <p class="csp-u-037">${UI.esc(t.statement)}</p>
+          <p class="csp-u-037 task-statement">${UI.esc(t.statement)}</p>
+          ${attachmentsHTML}
         </section>
 
         <section class="card">
-          <div class="head"><h2>Черновик решения</h2>
-            <span class="muted small">сохраняется автоматически</span></div>
-          <div class="editor">
+          <div class="head"><h2>${programming ? 'Редактор кода' : 'Ваш ответ'}</h2>
+            <span class="muted small"><span id="timer">0 мин</span> · сохраняется автоматически</span></div>
+          ${programming ? `<div class="editor">
             <div class="ehead">
               <span><span class="dot" id="live-dot"></span> редактор · виден репетитору во время занятия</span>
-              <span id="timer">0 мин</span>
+              <span>${practice ? 'самостоятельная практика' : 'рабочий черновик'}</span>
             </div>
             <textarea id="code" spellcheck="false" ${locked ? 'readonly' : ''}
               placeholder="# здесь пишут код решения — он не выполняется, это черновик">${UI.esc(a.code || '')}</textarea>
-          </div>
+          </div>` : ''}
 
           ${t.autoCheck ? `
             <div class="answer">
               <input id="answer" placeholder="ответ${t.answerType === 'set' ? ' — числа через пробел' : ''}"
-                     value="${UI.esc(a.answer || '')}" ${locked ? 'disabled' : ''}>
+                     value="${UI.attr(a.answer || '')}" ${locked ? 'disabled' : ''}>
               <button class="btn" id="check" ${locked ? 'disabled' : ''}>Проверить</button>
             </div>` : `
             <div class="answer">
@@ -121,7 +140,7 @@
       </div>
     </div>`;
 
-  UI.page({ session: ses, active: lesId ? 'lesson' : 'hw',
+  UI.page({ session: ses, active: practice ? 'practice' : lesId ? 'lesson' : 'hw',
     head: { title:'Решение задачи', sub:`${asg ? UI.esc(asg.title) : les ? 'Задание с занятия' : 'Практика'}` },
     body });
 
@@ -139,10 +158,10 @@
 
   if (!locked) {
     setInterval(() => {
-      if (document.hidden) { dot.classList.add('off'); return; }
+      if (document.hidden) { if (dot) dot.classList.add('off'); return; }
       idle++;
       const active = idle <= 120;
-      dot.classList.toggle('off', !active);
+      if (dot) dot.classList.toggle('off', !active);
       if (!active) return;
       accrued++; sincePersist++;
       timerEl.textContent = C.fmtDurShort(accrued);
@@ -153,7 +172,7 @@
       }
     }, 1000);
   } else {
-    dot.classList.add('off');
+    if (dot) dot.classList.add('off');
   }
   timerEl.textContent = C.fmtDurShort(accrued);
 
@@ -165,6 +184,10 @@
       clearTimeout(codeTimer);
       /* черновик уходит на сервер — оттуда его видит репетитор */
       codeTimer = setTimeout(() => Api.progress(a.id, code.value, accrued).catch(() => {}), 600);
+    });
+    window.addEventListener('pagehide', () => {
+      clearTimeout(codeTimer);
+      Api.progressOnExit(a.id, code.value, accrued).catch(() => {});
     });
   }
 
@@ -212,4 +235,13 @@
       document.getElementById('verdict').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
     }
   });
+
+  document.querySelectorAll('.practice-nav').forEach(link => link.addEventListener('click', async e => {
+    e.preventDefault();
+    if (link.dataset.task === taskId) return;
+    try {
+      const res = await Api.startPractice(link.dataset.task);
+      location.href = `/task.html?task=${encodeURIComponent(link.dataset.task)}&practice=1&attempt=${encodeURIComponent(res.attemptId)}`;
+    } catch (err) { alert(err.message); }
+  }));
 })();

@@ -139,10 +139,11 @@ function createCore(db) {
     .filter(a => a.studentId === sid && (!subjectId || a.subjectId === subjectId));
   const attemptsOfAssignment = aid => db.attempts.filter(a => a.assignmentId === aid);
   const attemptsOfLesson = lid => db.attempts.filter(a => a.lessonId === lid);
-  const attemptFor = (sid, taskId, scope) => db.attempts.find(a =>
+  const attemptFor = (sid, taskId, scope) => db.attempts.filter(a =>
     a.studentId === sid && a.taskId === taskId &&
     (scope && scope.assignmentId ? a.assignmentId === scope.assignmentId : true) &&
-    (scope && scope.lessonId ? a.lessonId === scope.lessonId : true));
+    (scope && scope.lessonId ? a.lessonId === scope.lessonId : true) &&
+    (scope && scope.context ? a.context === scope.context : true)).at(-1);
 
   const attemptDate = a => a.submittedAt || a.startedAt || null;
   const isDone = a => a.status === 'checked' || a.status === 'submitted';

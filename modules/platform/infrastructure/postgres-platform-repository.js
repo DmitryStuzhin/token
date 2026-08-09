@@ -140,6 +140,9 @@ class PostgresPlatformRepository {
       autoCheck: !!row.auto_check,
       difficulty: row.difficulty,
       source: row.source,
+      publishedAt: row.created_at,
+      taskType: row.task_type || 'answer',
+      attachments: parseJson(row.attachments, []),
       ...(withAnswers ? { answer: row.answer } : {}),
     }));
     return {
@@ -446,31 +449,43 @@ class PostgresPlatformRepository {
     return !!(await this.resolve('subjects', id, 'code'));
   }
   async insertTasks(items, partOf) {
+    const resourceColumn = await this.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+       WHERE table_name='tasks' AND column_name='task_type') present`,
+    );
+    const supportsResources = !!resourceColumn.rows[0]?.present;
     for (const task of items) {
       const subjectId = await this.resolve('subjects', task.subjectId, 'code');
       const part = partOf(task.subjectId, Number(task.number)) || {};
       const topicId = await this.resolve('topics', task.topicId || part.topicId);
       const answer = task.answer == null ? '' : String(task.answer);
+      const baseValues = [
+        uuidv7(),
+        String(task.id),
+        subjectId,
+        Number(task.number),
+        topicId,
+        String(task.title),
+        String(task.statement),
+        answer,
+        task.answerType || 'string',
+        task.compare || 'exact',
+        task.tolerance || 0,
+        task.autoCheck != null ? !!task.autoCheck : !!answer.trim(),
+        task.difficulty || 2,
+        task.source || 'import',
+      ];
       await this.query(
-        `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
+        supportsResources
+          ? `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
+        answer_type,compare_mode,tolerance,auto_check,difficulty,source,task_type,attachments)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)`
+          : `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
         answer_type,compare_mode,tolerance,auto_check,difficulty,source)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [
-          uuidv7(),
-          String(task.id),
-          subjectId,
-          Number(task.number),
-          topicId,
-          String(task.title),
-          String(task.statement),
-          answer,
-          task.answerType || 'string',
-          task.compare || 'exact',
-          task.tolerance || 0,
-          task.autoCheck != null ? !!task.autoCheck : !!answer.trim(),
-          task.difficulty || 2,
-          task.source || 'import',
-        ],
+        supportsResources
+          ? [...baseValues, task.taskType || 'answer', JSON.stringify(task.attachments || [])]
+          : baseValues,
       );
     }
   }
@@ -672,10 +687,15 @@ class PostgresPlatformRepository {
     const found = await this.query(
       `SELECT COALESCE(legacy_id,id::text) id FROM attempts
       WHERE student_id=$1 AND task_id=$2 AND assignment_id IS NOT DISTINCT FROM $3::uuid
-      AND lesson_id IS NOT DISTINCT FROM $4::uuid`,
-      [student, task, assignment, lesson],
+      AND lesson_id IS NOT DISTINCT FROM $4::uuid AND ($5::text IS NULL OR context=$5)
+      ORDER BY created_at DESC LIMIT 1`,
+      [student, task, assignment, lesson, scope.context || null],
     );
-    if (found.rows[0]) return found.rows[0];
+    if (found.rows[0]) {
+      const existing = await this.findAttempt(found.rows[0].id);
+      if (!(scope.newIfClosed && ['checked', 'submitted'].includes(existing.status)))
+        return existing;
+    }
     const subject = await this.query('SELECT subject_id::text FROM tasks WHERE id=$1', [task]);
     const id = idFactory();
     await this.query(
@@ -686,7 +706,7 @@ class PostgresPlatformRepository {
         task,
         student,
         subject.rows[0].subject_id,
-        lesson ? 'lesson' : 'homework',
+        scope.context || (lesson ? 'lesson' : 'homework'),
         lesson,
         assignment,
         await this.resolve('groups', scope.groupId),

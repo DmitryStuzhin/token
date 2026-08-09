@@ -20,6 +20,10 @@ tags: [тип/сущность, роль/репетитор, роль/учени
 | `compare` | `exact` · `ci` · `set` · `numeric` |
 | `tolerance` | допуск для `numeric` |
 | `auto_check` | `false` — проверяет репетитор |
+| `difficulty` | хранится как `1` / `2` / `3`, в интерфейсе показывается как `Easy` / `Medium` / `Hard` |
+| `published_at` / `created_at` | дата публикации для фильтрации каталога |
+| `task_type` | `answer` · `programming` · `files` — определяет интерфейс решения |
+| `attachments` | JSON-массив `{ name, url, kind }` для Excel и других материалов |
 
 ## Откуда берётся
 

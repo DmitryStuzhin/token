@@ -5,7 +5,12 @@
   const asParent = ses.role === 'parent';
   const S = UI.qs('student') || ses.studentId;
   const stUser = C.studentUser(S);
-  let subj = UI.subjectId(S);
+  const statSubjectIds = new Set(C.subjectsOf(S).map(s => s.id));
+  C.attemptsOf(S).forEach(a => { if (a.subjectId) statSubjectIds.add(a.subjectId); });
+  const statSubjects = [...statSubjectIds].map(id => C.subject(id)).filter(Boolean);
+  if (!statSubjects.length && ses.role === 'student') statSubjects.push(...C.db.subjects);
+  const requestedSubject = UI.qs('subject');
+  let subj = statSubjects.some(s => s.id === requestedSubject) ? requestedSubject : (statSubjects[0] || {}).id;
 
   const PERIODS = [
     { key:'7',  label:'Неделя',   days:7 },
@@ -228,6 +233,10 @@
 
   /* ── сборка ─────────────────────────────────────────────────── */
   function render() {
+    if (!subj) {
+      document.getElementById('content').innerHTML = `<section class="card">${UI.empty('Статистики пока нет','Решите первую задачу в <a href="student-bank.html">банке заданий</a>.')}</section>`;
+      return;
+    }
     const days = (PERIODS.find(p => p.key === period) || {}).days;
     document.getElementById('content').innerHTML = `
       ${kpiHTML(days)}
@@ -239,8 +248,10 @@
 
   const periodSwitcher = `<div class="filters csp-u-059">${PERIODS.map(p =>
     `<button data-p="${p.key}" class="${p.key === period ? 'on' : ''}">${p.label}</button>`).join('')}</div>`;
+  const statSubjectSwitcher = statSubjects.length < 2 ? '' : `<div class="filters csp-u-059">${statSubjects.map(s =>
+    `<button data-stat-subj="${s.id}" class="${s.id === subj ? 'on' : ''}">${UI.esc(s.short || s.name)}</button>`).join('')}</div>`;
   const switcher = `<div class="csp-u-020">
-    ${UI.subjectSwitcher(S, subj)}${periodSwitcher}</div>`;
+    ${statSubjectSwitcher}${periodSwitcher}</div>`;
 
   UI.page({
     session: ses,
@@ -248,11 +259,15 @@
     head:{ title:'Статистика',
       sub: (ses.role === 'student' ? 'Всё считается из решённых задач'
         : UI.esc(stUser.name) + (asParent ? ' · только просмотр' : ' · глазами репетитора'))
-        + ' · ' + C.subjectsOf(S).map(x => x.name).join(', '),
+        + (statSubjects.length ? ' · ' + statSubjects.map(x => x.name).join(', ') : ''),
       actions: switcher },
     body:'',
   });
-  UI.bindSubjectSwitcher(id => { subj = id; render(); });
+  document.querySelectorAll('[data-stat-subj]').forEach(button => button.addEventListener('click', () => {
+    subj = button.dataset.statSubj;
+    document.querySelectorAll('[data-stat-subj]').forEach(x => x.classList.toggle('on', x.dataset.statSubj === subj));
+    render();
+  }));
   document.querySelectorAll('[data-p]').forEach(b =>
     b.addEventListener('click', () => {
       period = b.dataset.p;

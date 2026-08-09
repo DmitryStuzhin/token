@@ -8,6 +8,7 @@ window.UI = (function () {
 
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const attr = s => esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   /* ── навигация по ролям ──────────────────────────────────────── */
   function navFor(s) {
@@ -32,8 +33,8 @@ window.UI = (function () {
       { key:'home',    href:'/index.html',    ico:'◧', label:'Главная' },
       { key:'lesson',  href:'/lesson.html',   ico:'▶', label:'Занятие' },
       { key:'hw',      href:'/homework.html', ico:'✎', label:'Д/З', pill:overdue || null },
-      { key:'stats',   href:'/stats.html',    ico:'▤', label:'Статистика' },
-      { key:'account', href:'/account.html',  ico:'◔', label:'Профиль' },
+      { key:'practice', href:'/student-bank.html', ico:'▤', label:'Банк заданий' },
+      { key:'stats',   href:'/stats.html',    ico:'↗', label:'Статистика' },
     ];
   }
 
@@ -49,13 +50,13 @@ window.UI = (function () {
         <div class="logo">Token<small>${esc(Auth.ROLES[s.role].label)}</small></div>
         <nav class="nav">${items}</nav>
         <div class="side-foot">
-          <div class="rolepick csp-rolepick">
+          ${s.role === 'student' ? '<a href="/account.html" class="profile-link" aria-label="Открыть профиль">' : ''}<div class="rolepick csp-rolepick">
             ${avatar(s.user.name, s.role === 'tutor' ? 'blue' : '')}
             <div class="csp-rolecopy">
               <div class="csp-role-name">${esc(s.user.name)}</div>
               <div class="muted csp-role-email">${esc(s.user.email)}</div>
             </div>
-          </div>
+          </div>${s.role === 'student' ? '</a>' : ''}
           <a href="#" class="logout" id="do-logout"><span class="ico">⏻</span>Выйти</a>
         </div>
       </aside>`;
@@ -147,6 +148,13 @@ window.UI = (function () {
     if (p >= 60) return 'pct-amber';
     return 'pct-red';
   }
+  function difficultyLabel(value) {
+    return ({ 1:'Easy', 2:'Medium', 3:'Hard' })[Number(value)] || 'Medium';
+  }
+  function difficultyHTML(value) {
+    const level = ({ 1:'easy', 2:'medium', 3:'hard' })[Number(value)] || 'medium';
+    return `<span class="difficulty ${level}">${difficultyLabel(value)}</span>`;
+  }
   function avatar(name, cls) {
     const ini = String(name || '?').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
     return `<div class="avatar ${cls || ''}">${ini}</div>`;
@@ -182,6 +190,7 @@ window.UI = (function () {
     return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
   }
 
-  return { page, badge, empty, bar, pctColor, pctClass, avatar, esc, linkRow, LINK_TYPE,
-           qs, subjectId, subjectSwitcher, bindSubjectSwitcher, subjectTag, copy, dtLocal };
+  return { page, badge, empty, bar, pctColor, pctClass, avatar, esc, attr, linkRow, LINK_TYPE,
+           qs, subjectId, subjectSwitcher, bindSubjectSwitcher, subjectTag,
+           difficultyLabel, difficultyHTML, copy, dtLocal };
 })();

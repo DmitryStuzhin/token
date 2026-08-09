@@ -54,8 +54,8 @@ class SqlitePlatformRepository {
   }
   async insertTasks(items, partOf) {
     const insert = db.prepare(`INSERT INTO tasks
-      (id,subject_id,number,topic_id,title,statement,answer,answer_type,compare,tolerance,auto_check,difficulty,source)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,subject_id,number,topic_id,title,statement,answer,answer_type,compare,tolerance,auto_check,difficulty,source,published_at,task_type,attachments)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     await this.transaction(() =>
       items.forEach((task) => {
         const part = partOf(task.subjectId, Number(task.number)) || {};
@@ -74,6 +74,9 @@ class SqlitePlatformRepository {
           (task.autoCheck != null ? !!task.autoCheck : !!answer.trim()) ? 1 : 0,
           task.difficulty || 2,
           task.source || 'import',
+          task.publishedAt || new Date().toISOString(),
+          task.taskType || 'answer',
+          JSON.stringify(task.attachments || []),
         );
       }),
     );
@@ -222,10 +225,19 @@ class SqlitePlatformRepository {
     const found = db
       .prepare(
         `SELECT * FROM attempts WHERE student_id = ? AND task_id = ?
-      AND IFNULL(assignment_id,'') = IFNULL(?, '') AND IFNULL(lesson_id,'') = IFNULL(?, '')`,
+      AND IFNULL(assignment_id,'') = IFNULL(?, '') AND IFNULL(lesson_id,'') = IFNULL(?, '')
+      AND (? IS NULL OR context = ?) ORDER BY rowid DESC LIMIT 1`,
       )
-      .get(studentId, taskId, scope.assignmentId || null, scope.lessonId || null);
-    if (found) return found;
+      .get(
+        studentId,
+        taskId,
+        scope.assignmentId || null,
+        scope.lessonId || null,
+        scope.context || null,
+        scope.context || null,
+      );
+    if (found && !(scope.newIfClosed && ['checked', 'submitted'].includes(found.status)))
+      return found;
     const id = idFactory();
     db.prepare(
       `INSERT INTO attempts (id,task_id,student_id,subject_id,context,lesson_id,assignment_id,group_id,
@@ -236,7 +248,7 @@ class SqlitePlatformRepository {
       taskId,
       studentId,
       task.subject_id,
-      scope.lessonId ? 'lesson' : 'homework',
+      scope.context || (scope.lessonId ? 'lesson' : 'homework'),
       scope.lessonId || null,
       scope.assignmentId || null,
       scope.groupId || null,

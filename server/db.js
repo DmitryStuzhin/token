@@ -140,18 +140,22 @@ ensureColumn('lessons', 'version', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('assignments', 'status', "TEXT NOT NULL DEFAULT 'published'");
 ensureColumn('assignments', 'version', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('attempts', 'version', 'INTEGER NOT NULL DEFAULT 1');
+ensureColumn('tasks', 'published_at', 'TEXT');
+ensureColumn('tasks', 'task_type', "TEXT NOT NULL DEFAULT 'answer'");
+ensureColumn('tasks', 'attachments', "TEXT NOT NULL DEFAULT '[]'");
+db.prepare("UPDATE tasks SET published_at = datetime('now') WHERE published_at IS NULL").run();
+db.prepare("UPDATE tasks SET published_at = replace(published_at, ' ', 'T') || 'Z' WHERE published_at NOT LIKE '%T%'").run();
 
 /* ── заполнение справочников ─────────────────────────────────────── */
 function seedReference() {
-  const haveSubjects = db.prepare('SELECT COUNT(*) n FROM subjects').get().n;
-  if (!haveSubjects) {
-    const ins = db.prepare(`INSERT INTO subjects (id,name,short,slug,color,exam)
-                            VALUES (@id,@name,@short,@slug,@color,@exam)`);
-    db.transaction(rows => rows.forEach(s => ins.run({
+  const upsertSubject = db.prepare(`INSERT INTO subjects (id,name,short,slug,color,exam)
+    VALUES (@id,@name,@short,@slug,@color,@exam)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, short=excluded.short,
+      slug=excluded.slug, color=excluded.color, exam=excluded.exam`);
+  db.transaction(rows => rows.forEach(s => upsertSubject.run({
       id:s.id, name:s.name, short:s.short, slug:s.slug, color:s.color,
       exam: JSON.stringify(s.exam),
     })))(Domain.subjects);
-  }
   const haveTopics = db.prepare('SELECT COUNT(*) n FROM topics').get().n;
   if (!haveTopics) {
     const ins = db.prepare('INSERT INTO topics (id,subject_id,name) VALUES (?,?,?)');
@@ -160,12 +164,18 @@ function seedReference() {
   const haveTasks = db.prepare('SELECT COUNT(*) n FROM tasks').get().n;
   if (!haveTasks) {
     const ins = db.prepare(`INSERT INTO tasks
-      (id,subject_id,number,topic_id,title,statement,answer,answer_type,compare,tolerance,auto_check,difficulty,source)
-      VALUES (@id,@subjectId,@number,@topicId,@title,@statement,@answer,@answerType,@compare,@tolerance,@autoCheck,@difficulty,@source)`);
+      (id,subject_id,number,topic_id,title,statement,answer,answer_type,compare,tolerance,auto_check,difficulty,source,published_at,task_type,attachments)
+      VALUES (@id,@subjectId,@number,@topicId,@title,@statement,@answer,@answerType,@compare,@tolerance,@autoCheck,@difficulty,@source,@publishedAt,@taskType,@attachments)`);
     db.transaction(rows => rows.forEach(t => ins.run({
       ...t, autoCheck: t.autoCheck ? 1 : 0, tolerance: t.tolerance || 0,
+      publishedAt:t.publishedAt || new Date().toISOString(),
+      taskType:t.taskType || 'answer', attachments:JSON.stringify(t.attachments || []),
     })))(Domain.generateTasks());
   }
+  const syncGeneratedType = db.prepare("UPDATE tasks SET task_type = ?, attachments = ? WHERE id = ? AND source = 'generated'");
+  db.transaction(rows => rows.forEach(t => syncGeneratedType.run(
+    t.taskType || 'answer', JSON.stringify(t.attachments || []), t.id,
+  )))(Domain.generateTasks());
 }
 seedReference();
 
@@ -178,6 +188,7 @@ const rowTask    = (r, withAnswer) => Object.assign({
   id:r.id, subjectId:r.subject_id, number:r.number, topicId:r.topic_id,
   title:r.title, statement:r.statement, answerType:r.answer_type, compare:r.compare,
   tolerance:r.tolerance, autoCheck:!!r.auto_check, difficulty:r.difficulty, source:r.source,
+  publishedAt:r.published_at, taskType:r.task_type || 'answer', attachments:J(r.attachments, []),
 }, withAnswer ? { answer:r.answer } : {});
 const rowUser    = r => ({ id:r.id, role:r.role, name:r.name, email:r.email, phone:r.phone, tz:r.tz, createdAt:r.created_at });
 const rowStudent = r => ({ id:r.id, userId:r.user_id, grade:r.grade, school:r.school, startedAt:r.started_at });

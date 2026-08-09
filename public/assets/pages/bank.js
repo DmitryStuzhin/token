@@ -2,10 +2,13 @@
   const ses = Auth.require('tutor');
   if (!ses) return;
   const C = Core;
+  const allowedSubjectIds = new Set((ses.profile && ses.profile.subjects) || []);
+  const subjects = C.db.subjects.filter(s => allowedSubjectIds.has(s.id));
+  const visibleTasks = C.db.tasks.filter(t => allowedSubjectIds.has(t.subjectId));
 
   /* ── предметы ───────────────────────────────────────────────── */
   function subjectsHTML() {
-    const rows = C.db.subjects.map(s => {
+    const rows = subjects.map(s => {
       const ex = s.exam;
       const tasks = C.db.tasks.filter(t => t.subjectId === s.id);
       const tops = C.db.topics.filter(t => t.subjectId === s.id);
@@ -41,7 +44,7 @@
   /* ── абонементы ─────────────────────────────────────────────── */
   /* ── банк задач и импорт ────────────────────────────────────── */
   function bankHTML() {
-    const bySubject = C.db.subjects.map(s => {
+    const bySubject = subjects.map(s => {
       const parts = s.exam.parts;
       const tasks = C.db.tasks.filter(t => t.subjectId === s.id);
       const byNum = {};
@@ -49,9 +52,9 @@
       const covered = Object.keys(byNum).length;
       const grid = parts.map(p => {
         const c = byNum[p.number] || 0;
-        return `<div class="csp-u-067">
+        return `<a href="/task-number.html?subject=${encodeURIComponent(s.id)}&number=${p.number}" class="csp-u-067">
           <div class="bank-cell ${c ? 'bank-cell-covered' : 'bank-cell-empty'}">${c || '—'}</div>
-          <div class="muted csp-u-033">№${p.number}</div></div>`;
+          <div class="muted csp-u-033">№${p.number}</div></a>`;
       }).join('');
       return `<div class="csp-u-050">
         <div class="csp-u-026">
@@ -64,10 +67,10 @@
       </div>`;
     }).join('');
 
-    const rows = C.db.tasks.map(t => `<tr>
+    const rows = visibleTasks.map(t => `<tr>
       <td>${UI.subjectTag(C.subject(t.subjectId))}</td>
       <td><b>№${t.number}</b></td>
-      <td>${UI.esc(t.title)}</td>
+      <td><a href="/task-view.html?task=${encodeURIComponent(t.id)}"><b>${UI.esc(t.title)}</b></a></td>
       <td class="muted small">${UI.esc((C.topic(t.topicId) || {}).name || '')}</td>
       <td>${t.autoCheck ? '<span class="badge b-green">авто</span>' : '<span class="badge b-amber">вручную</span>'}</td>
       <td class="muted small">${UI.esc(t.answerType)} / ${UI.esc(t.compare)}</td>
@@ -122,8 +125,8 @@
     session: ses,
     active:'bank',
     head:{ title:'Банк задач',
-      sub:`${C.db.tasks.length} ${C.plural(C.db.tasks.length,'задача','задачи','задач')} ·
-           ${C.db.subjects.length} ${C.plural(C.db.subjects.length,'предмет','предмета','предметов')}` },
+      sub:`${visibleTasks.length} ${C.plural(visibleTasks.length,'задача','задачи','задач')} ·
+           ${subjects.length} ${C.plural(subjects.length,'предмет','предмета','предметов')}` },
     body: subjectsHTML() + bankHTML(),
   });
 
