@@ -69,6 +69,7 @@ const bodySchemas = [
   [/^\/lessons\/[^/]+\/status$/, z.object({ status:z.enum(['planned','done','moved','cancelled','missed']) })],
   [/^\/assignments$/, z.object({ enrollmentId:z.string().optional(), groupId:z.string().optional(), lessonId:z.string().nullable().optional(), title:z.string().min(1).max(300), dueAt:z.iso.datetime().optional(), taskIds:z.array(z.string()).min(1).max(500) })],
   [/^\/attempts\/[^/]+\/progress$/, z.object({ code:z.string().max(20000).optional(), activeSeconds:z.number().int().min(0).optional() })],
+  [/^\/attempts\/[^/]+\/coach$/, z.object({ code:z.string().max(20000) })],
   [/^\/attempts\/[^/]+\/answer$/, z.object({ answer:z.union([z.string(),z.number()]), activeSeconds:z.number().int().min(0).optional() })],
   [/^\/attempts\/[^/]+\/submit$/, z.object({ code:z.string().max(20000).optional(), activeSeconds:z.number().int().min(0).optional() })],
   [/^\/attempts\/[^/]+\/review$/, z.object({ score:z.number().min(0).max(10), comment:z.string().max(2000).optional() })],

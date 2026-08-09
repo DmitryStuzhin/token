@@ -68,6 +68,7 @@ window.Api = (function () {
     /* задания и работы */
     createAssignment: data => post('/assignments', data),
     progress: (id, code, activeSeconds) => post('/attempts/' + id + '/progress', { code, activeSeconds }),
+    coach: (id, code) => post('/attempts/' + id + '/coach', { code }),
     answer: (id, answer, activeSeconds) => post('/attempts/' + id + '/answer', { answer, activeSeconds }),
     submit: (id, code, activeSeconds) => post('/attempts/' + id + '/submit', { code, activeSeconds }),
     review: (id, score, comment) => post('/attempts/' + id + '/review', { score, comment }),
