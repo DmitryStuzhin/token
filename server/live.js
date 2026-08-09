@@ -47,6 +47,20 @@ function create(server, dependencies) {
     room.forEach(socket => { if (socket.readyState === WebSocket.OPEN) socket.send(message); });
   }
 
+  function invalidate(lessonId, reason = 'lesson_changed') {
+    const room = roomsByLesson.get(lessonId);
+    if (!room) return;
+    const message = JSON.stringify({
+      type: 'state_invalidated',
+      lessonId,
+      reason,
+      at: new Date().toISOString(),
+    });
+    room.forEach(socket => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(message);
+    });
+  }
+
   function sendToStudent(lessonId, studentId, payload) {
     const room = roomsByLesson.get(lessonId);
     if (!room) return;
@@ -58,8 +72,73 @@ function create(server, dependencies) {
     });
   }
 
+  function sendToTutors(lessonId, payload, sender) {
+    const room = roomsByLesson.get(lessonId);
+    if (!room) return;
+    const message = JSON.stringify(payload);
+    room.forEach(client => {
+      if (client !== sender && client.readyState === WebSocket.OPEN && client.role === 'tutor') {
+        client.send(message);
+      }
+    });
+  }
+
+  function normalizedPoints(value, limit = 48) {
+    return Array.isArray(value) ? value.slice(0, limit)
+      .map(point => ({ x:Number(point && point.x), y:Number(point && point.y) }))
+      .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)
+        && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1) : [];
+  }
+
+  async function attemptTarget(socket, message) {
+    const attemptId = String(message.attemptId || '');
+    if (!attemptId) return null;
+    if (!socket.attemptTargets) socket.attemptTargets = new Map();
+    if (!socket.attemptTargets.has(attemptId)) {
+      socket.attemptTargets.set(attemptId, Promise.resolve(repository.findAttempt(attemptId)).then(attempt => {
+        if (!attempt || attempt.lesson_id !== socket.lessonId) return null;
+        if (socket.role === 'student' && attempt.student_id !== socket.studentId) return null;
+        return { attemptId, studentId:attempt.student_id, taskId:attempt.task_id };
+      }));
+    }
+    return socket.attemptTargets.get(attemptId);
+  }
+
+  async function liveCode(socket, message) {
+    if (!message || typeof message !== 'object') return;
+    const target = await attemptTarget(socket, message);
+    if (!target) return;
+    const code = String(message.code == null ? '' : message.code).slice(0, 20000);
+    const sequence = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Number(message.sequence) || 0));
+    const payload = {
+      type:'code_live', lessonId:socket.lessonId, ...target, code, sequence,
+      senderRole:socket.role,
+    };
+    if (socket.role === 'student') sendToTutors(socket.lessonId, payload, socket);
+    else sendToStudent(socket.lessonId, target.studentId, payload);
+  }
+
   async function tutorEvent(socket, message) {
     if (socket.role !== 'tutor' || !message || typeof message !== 'object') return;
+    if (message.type === 'laser_points' || message.type === 'laser_end') {
+      const strokeId = String(message.strokeId || '').slice(0, 80);
+      const active = socket.laserStrokes && socket.laserStrokes.get(strokeId);
+      if (!active) return;
+      if (message.type === 'laser_points') {
+        const points = normalizedPoints(message.points);
+        if (!points.length || active.points + points.length > 1024) return;
+        active.points += points.length;
+        sendToStudent(socket.lessonId, active.studentId, {
+          type:'laser_points', lessonId:socket.lessonId, taskId:active.taskId, strokeId, points,
+        });
+      } else {
+        socket.laserStrokes.delete(strokeId);
+        sendToStudent(socket.lessonId, active.studentId, {
+          type:'laser_end', lessonId:socket.lessonId, taskId:active.taskId, strokeId,
+        });
+      }
+      return;
+    }
     const studentId = String(message.studentId || '');
     const state = await repository.fullState();
     const lesson = state.lessons.find(item => item.id === socket.lessonId);
@@ -69,15 +148,19 @@ function create(server, dependencies) {
       : state.enrollments.filter(item => item.id === lesson.enrollmentId).map(item => item.studentId);
     if (!students.includes(studentId)) return;
 
-    if (message.type === 'laser') {
+    if (message.type === 'laser_start') {
       const taskId = String(message.taskId || '');
       if (!(lesson.taskIds || []).includes(taskId)) return;
-      const points = Array.isArray(message.points) ? message.points.slice(0, 256)
-        .map(point => ({ x:Number(point && point.x), y:Number(point && point.y) }))
-        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)
-          && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1) : [];
-      if (points.length < 2) return;
-      sendToStudent(socket.lessonId, studentId, { type:'laser', lessonId:socket.lessonId, taskId, points });
+      const strokeId = String(message.strokeId || '').slice(0, 80);
+      const points = normalizedPoints(message.points, 8);
+      if (!strokeId || points.length !== 1) return;
+      if (!socket.laserStrokes) socket.laserStrokes = new Map();
+      if (socket.laserStrokes.size >= 4) return;
+      socket.laserStrokes.set(strokeId, { studentId, taskId, points:1 });
+      sendToStudent(socket.lessonId, studentId, {
+        type:'laser_start', lessonId:socket.lessonId, taskId, strokeId, points,
+      });
+      return;
     }
     if (message.type === 'hint') {
       const text = String(message.text || '').trim().slice(0, 500);
@@ -145,14 +228,17 @@ function create(server, dependencies) {
       if (message?.type === 'ping' && socket.role === 'student' && socket.studentId) {
         push(socket.lessonId, socket.studentId);
       }
-      if (socket.role === 'tutor' && (message?.type === 'laser' || message?.type === 'hint')) {
+      if (message?.type === 'code_live') {
+        void liveCode(socket, message).catch(() => undefined);
+      }
+      if (socket.role === 'tutor' && ['laser_start','laser_points','laser_end','hint'].includes(message?.type)) {
         void tutorEvent(socket, message).catch(() => undefined);
       }
     });
     socket.on('close', () => { leave(socket.lessonId, socket); presence(socket.lessonId); });
     socket.on('error', () => leave(socket.lessonId, socket));
   });
-  return { push, presence, rooms: roomsByLesson };
+  return { push, presence, invalidate, rooms: roomsByLesson };
 }
 
 module.exports = { create };

@@ -21,6 +21,7 @@ void test('API v1 read models rebuild synchronously from primary facts', async (
   try {
     await database.exec(await up('001_initial.sql'));
     await database.exec(await up('002_api_v1_read_models.sql'));
+    await database.exec(await up('003_include_answer_errors_in_stats.sql'));
     const subject = uuidv7();
     const user = uuidv7();
     const student = uuidv7();
@@ -92,14 +93,24 @@ void test('API v1 read models rebuild synchronously from primary facts', async (
     assert.deepEqual(progress.rows[0], { status: 'checked', completed_tasks: 1 });
 
     await database.query(
-      `UPDATE attempts SET status='in_progress',is_correct=NULL,active_seconds=120
+      `UPDATE attempts SET status='in_progress',is_correct=false,tries=1,active_seconds=120
        WHERE id=$1`,
       [attempt],
     );
-    const refreshed = await database.query<{ solved_total: number; active_seconds: string }>(
-      'SELECT solved_total,active_seconds::text FROM student_subject_stats',
+    const refreshed = await database.query<{
+      solved_total: number;
+      correct_total: number;
+      accuracy: number;
+      active_seconds: string;
+    }>(
+      'SELECT solved_total,correct_total,accuracy,active_seconds::text FROM student_subject_stats',
     );
-    assert.deepEqual(refreshed.rows[0], { solved_total: 0, active_seconds: '120' });
+    assert.deepEqual(refreshed.rows[0], {
+      solved_total: 1,
+      correct_total: 0,
+      accuracy: 0,
+      active_seconds: '120',
+    });
   } finally {
     await database.close();
   }

@@ -249,7 +249,6 @@ router.post('/lessons', A.requireRole('tutor'), asyncRoute(async (req, res) => {
     if (!g || g.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваша группа' });
     subjectId = g.subject_id;
   } else return res.status(400).json({ error:'Укажите ученика или группу' });
-
   const id = uid('l');
   await repository(req).createLesson({
     id, subjectId, tutorId:req.tutorId, enrollmentId:enrollmentId || null,
@@ -272,6 +271,7 @@ router.post('/lessons/:id/links', A.requireRole('tutor'), asyncRoute(async (req,
 
   const links = JSON.parse(l.links || '[]').concat({ type, label, url });
   assertUpdated(await repository(req).updateLessonLinks(l, links), 'Lesson', l.id);
+  req.app.locals.live.invalidate(l.id, 'links_changed');
   res.json({ ok:true, links });
 }));
 
@@ -281,6 +281,7 @@ router.delete('/lessons/:id/links/:index', A.requireRole('tutor'), asyncRoute(as
   const links = JSON.parse(l.links || '[]');
   links.splice(+req.params.index, 1);
   assertUpdated(await repository(req).updateLessonLinks(l, links), 'Lesson', l.id);
+  req.app.locals.live.invalidate(l.id, 'links_changed');
   res.json({ ok:true, links });
 }));
 
@@ -300,6 +301,7 @@ router.post('/lessons/:id/tasks', A.requireRole('tutor'), asyncRoute(async (req,
       await ensureAttempt(req, sid, taskId, { lessonId:l.id, groupId:l.group_id });
     }
   });
+  req.app.locals.live.invalidate(l.id, 'tasks_changed');
   res.json({ ok:true });
 }));
 
@@ -312,6 +314,7 @@ router.delete('/lessons/:id/tasks/:taskId', A.requireRole('tutor'), asyncRoute(a
     /* нетронутые попытки убираем, начатые оставляем — это уже работа ученика */
     await repository(req).removeIssuedAttempt(l.id, req.params.taskId);
   });
+  req.app.locals.live.invalidate(l.id, 'tasks_changed');
   res.json({ ok:true });
 }));
 
@@ -323,7 +326,10 @@ router.post('/lessons/:id/status', A.requireRole('tutor'), (req, res, next) => {
     tutorId:req.tutorId,
     status,
     correlationId:req.id,
-  }).then(() => res.json({ ok:true })).catch(next);
+  }).then(() => {
+    req.app.locals.live.invalidate(req.params.id, 'lesson_status_changed');
+    res.json({ ok:true });
+  }).catch(next);
 });
 
 /* ── домашние задания ────────────────────────────────────────────── */
@@ -343,6 +349,15 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
     subjectId = g.subject_id;
     students = await repository(req).activeGroupStudentIds(groupId);
   } else return res.status(400).json({ error:'Укажите ученика или группу' });
+  if (!students.length) return res.status(400).json({ error:'В выбранной группе пока нет учеников' });
+
+  const uniqueTaskIds = [...new Set(taskIds.map(String))];
+  if (uniqueTaskIds.length !== taskIds.length) return res.status(400).json({ error:'Одна задача выбрана несколько раз' });
+  for (const taskId of uniqueTaskIds) {
+    const task = await repository(req).findTask(taskId);
+    if (!task) return res.status(404).json({ error:`Задача «${taskId}» не найдена` });
+    if (task.subject_id !== subjectId) return res.status(400).json({ error:'В Д/З есть задача из другого предмета' });
+  }
 
   const id = uid('a');
   const assignmentStatus = transitionAssignment('draft', 'published');
@@ -350,11 +365,11 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
     await repository(req).createAssignment({
       id, subjectId, enrollmentId:enrollmentId || null, groupId:groupId || null,
       lessonId:lessonId || null, title:String(title).trim(),
-      dueAt:dueAt ? new Date(dueAt).toISOString() : now(), taskIds,
+      dueAt:dueAt ? new Date(dueAt).toISOString() : now(), taskIds:uniqueTaskIds,
       status:assignmentStatus,
     });
     for (const sid of students) {
-      for (const taskId of taskIds) {
+      for (const taskId of uniqueTaskIds) {
         await ensureAttempt(req, sid, taskId, { assignmentId:id, groupId:groupId || null });
       }
     }
@@ -364,6 +379,7 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
     correlationId:req.id,
     payload:{ assignmentId:id, tutorId:req.tutorId },
   }));
+  if (lessonId) req.app.locals.live.invalidate(lessonId, 'assignment_changed');
   res.json({ ok:true, id });
 }));
 
@@ -488,6 +504,7 @@ router.post('/attempts/:id/review', A.requireRole('tutor'), asyncRoute(async (re
     correlationId:req.id,
     payload:{ attemptId:a.id, studentId:a.student_id, automatic:false },
   }));
+  await req.app.locals.live.push(a.lesson_id, a.student_id);
   res.json({ ok:true });
 }));
 

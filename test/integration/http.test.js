@@ -15,6 +15,7 @@ process.env.COOKIE_SECURE = 'false';
 const { createApp } = require('../../server/app.js');
 const { loadConfig } = require('../../server/config.js');
 const { db, taskWithAnswer } = require('../../server/db.js');
+const { createCore } = require('../../shared/core.js');
 
 const app = createApp({ config: loadConfig() });
 
@@ -124,7 +125,7 @@ test('main learning flow works through public API', async () => {
     startsAt: new Date(Date.now() + fixture.lesson.startsInMs).toISOString(),
     durationMin: fixture.lesson.durationMin,
   });
-  assert.equal(lesson.status, 200);
+  assert.equal(lesson.status, 200, JSON.stringify(lesson.body));
 
   const tasks = await tutor.get(`/api/tasks?subject=${fixture.taskSelection.subjectId}`);
   const publicTask = tasks.body.find(item => item.autoCheck === fixture.taskSelection.autoCheck);
@@ -161,12 +162,26 @@ test('main learning flow works through public API', async () => {
   assert.equal(foreignGroup.status, 403);
 
   const hiddenTask = taskWithAnswer(publicTask.id);
+  const incorrect = await student.post(`/api/attempts/${attempt.id}/answer`).send({
+    answer: `${hiddenTask.answer}__неверно`,
+    activeSeconds: 21,
+  });
+  assert.equal(incorrect.status, 200);
+  assert.equal(incorrect.body.correct, false);
+  assert.equal(incorrect.body.tries, 1);
+  const stateAfterError = (await student.get('/api/state')).body;
+  const failedAttempt = stateAfterError.attempts.find(item => item.id === attempt.id);
+  assert.equal(failedAttempt.status, 'in_progress');
+  assert.equal(failedAttempt.isCorrect, false);
+  assert.equal(createCore(stateAfterError).kpi(enrollment.studentId, publicTask.subjectId).accuracy, 0);
+
   const checked = await student.post(`/api/attempts/${attempt.id}/answer`).send({
     answer: hiddenTask.answer,
     activeSeconds: 42,
   });
   assert.equal(checked.status, 200);
   assert.equal(checked.body.correct, true);
+  assert.equal(checked.body.tries, 2);
 
   const finalState = await student.get('/api/state');
   const finalAttempt = finalState.body.attempts.find(item => item.id === attempt.id);

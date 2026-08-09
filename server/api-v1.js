@@ -285,6 +285,7 @@ router.patch('/lessons/:id', A.requireRole('tutor'), asyncRoute(async (req, res)
     correlationId:req.id,
   });
   const updated = await req.app.locals.repository.findOwnedLesson(req.tutorId, req.params.id);
+  req.app.locals.live.invalidate(req.params.id, 'lesson_status_changed');
   res.set('ETag', `"v${String(updated.version)}"`);
   return res.json({ ok:true, version:updated.version });
 }));
