@@ -228,9 +228,16 @@ class SqlitePlatformRepository {
       AND IFNULL(assignment_id,'') = IFNULL(?, '') AND IFNULL(lesson_id,'') = IFNULL(?, '')
       AND (? IS NULL OR context = ?) ORDER BY rowid DESC LIMIT 1`,
       )
-      .get(studentId, taskId, scope.assignmentId || null, scope.lessonId || null,
-        scope.context || null, scope.context || null);
-    if (found && !(scope.newIfClosed && ['checked','submitted'].includes(found.status))) return found;
+      .get(
+        studentId,
+        taskId,
+        scope.assignmentId || null,
+        scope.lessonId || null,
+        scope.context || null,
+        scope.context || null,
+      );
+    if (found && !(scope.newIfClosed && ['checked', 'submitted'].includes(found.status)))
+      return found;
     const id = idFactory();
     db.prepare(
       `INSERT INTO attempts (id,task_id,student_id,subject_id,context,lesson_id,assignment_id,group_id,

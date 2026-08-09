@@ -460,20 +460,33 @@ class PostgresPlatformRepository {
       const topicId = await this.resolve('topics', task.topicId || part.topicId);
       const answer = task.answer == null ? '' : String(task.answer);
       const baseValues = [
-        uuidv7(), String(task.id), subjectId, Number(task.number), topicId,
-        String(task.title), String(task.statement), answer, task.answerType || 'string',
-        task.compare || 'exact', task.tolerance || 0,
+        uuidv7(),
+        String(task.id),
+        subjectId,
+        Number(task.number),
+        topicId,
+        String(task.title),
+        String(task.statement),
+        answer,
+        task.answerType || 'string',
+        task.compare || 'exact',
+        task.tolerance || 0,
         task.autoCheck != null ? !!task.autoCheck : !!answer.trim(),
-        task.difficulty || 2, task.source || 'import',
+        task.difficulty || 2,
+        task.source || 'import',
       ];
-      await this.query(supportsResources ?
-        `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
+      await this.query(
+        supportsResources
+          ? `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
         answer_type,compare_mode,tolerance,auto_check,difficulty,source,task_type,attachments)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)` :
-        `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb)`
+          : `INSERT INTO tasks (id,legacy_id,subject_id,number,topic_id,title,statement,answer,
         answer_type,compare_mode,tolerance,auto_check,difficulty,source)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        supportsResources ? [...baseValues, task.taskType || 'answer', JSON.stringify(task.attachments || [])] : baseValues);
+        supportsResources
+          ? [...baseValues, task.taskType || 'answer', JSON.stringify(task.attachments || [])]
+          : baseValues,
+      );
     }
   }
 
@@ -680,7 +693,8 @@ class PostgresPlatformRepository {
     );
     if (found.rows[0]) {
       const existing = await this.findAttempt(found.rows[0].id);
-      if (!(scope.newIfClosed && ['checked','submitted'].includes(existing.status))) return existing;
+      if (!(scope.newIfClosed && ['checked', 'submitted'].includes(existing.status)))
+        return existing;
     }
     const subject = await this.query('SELECT subject_id::text FROM tasks WHERE id=$1', [task]);
     const id = idFactory();
