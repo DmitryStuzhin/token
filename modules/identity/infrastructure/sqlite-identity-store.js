@@ -100,9 +100,7 @@ class SqliteIdentityStore {
   }
   async countAccountTokenAttempt(tokenHash) {
     db.prepare('UPDATE account_tokens SET attempts=attempts+1 WHERE token_hash=?').run(tokenHash);
-    const row = db
-      .prepare('SELECT attempts FROM account_tokens WHERE token_hash=?')
-      .get(tokenHash);
+    const row = db.prepare('SELECT attempts FROM account_tokens WHERE token_hash=?').get(tokenHash);
     return row ? row.attempts : 0;
   }
   async deleteAccountToken(tokenHash) {

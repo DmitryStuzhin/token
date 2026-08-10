@@ -145,14 +145,7 @@ class PostgresIdentityStore {
       `INSERT INTO trusted_devices
        (id,user_id,token_hash,created_at,last_seen_at,expires_at,user_agent)
        VALUES ($1,$2,$3,$4,$4,$5,$6)`,
-      [
-        device.id,
-        userId,
-        device.tokenHash,
-        device.createdAt,
-        device.expiresAt,
-        device.userAgent,
-      ],
+      [device.id, userId, device.tokenHash, device.createdAt, device.expiresAt, device.userAgent],
     );
   }
   async touchTrustedDevice(userId, tokenHash, now) {
