@@ -70,7 +70,7 @@ class PostgresIdentityStore {
   }
   async findUserByEmail(email) {
     const result = await this.pool.query(
-      `SELECT COALESCE(legacy_id,id::text) id,role,name,email,
+      `SELECT COALESCE(legacy_id,id::text) id,role,name,email,email_verified_at,
       pass_hash,pass_salt,phone,tz,created_at FROM users WHERE lower(email)=lower($1) LIMIT 1`,
       [email],
     );
@@ -78,7 +78,7 @@ class PostgresIdentityStore {
   }
   async findUserById(id) {
     const result = await this.pool.query(
-      `SELECT COALESCE(legacy_id,id::text) id,role,name,email,
+      `SELECT COALESCE(legacy_id,id::text) id,role,name,email,email_verified_at,
       pass_hash,pass_salt,phone,tz,created_at FROM users WHERE id::text=$1 OR legacy_id=$1 LIMIT 1`,
       [id],
     );
@@ -89,6 +89,68 @@ class PostgresIdentityStore {
       `UPDATE users SET pass_hash=$1,pass_salt=$2,updated_at=now()
        WHERE id::text=$3 OR legacy_id=$3`,
       [credentials.hash, credentials.salt, id],
+    );
+  }
+  async markEmailVerified(id, verifiedAt) {
+    await this.pool.query(
+      'UPDATE users SET email_verified_at=$1,updated_at=now() WHERE id::text=$2 OR legacy_id=$2',
+      [verifiedAt, id],
+    );
+  }
+  async replaceAccountToken(input) {
+    const userId = await this.internalUserId(input.userId);
+    await this.pool.query(
+      'DELETE FROM account_tokens WHERE user_id=$1 AND purpose=$2 AND consumed_at IS NULL',
+      [userId, input.purpose],
+    );
+    await this.pool.query(
+      `INSERT INTO account_tokens
+       (token_hash,user_id,purpose,created_at,expires_at,requested_ip)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [input.tokenHash, userId, input.purpose, input.createdAt, input.expiresAt, input.ip],
+    );
+  }
+  async consumeAccountToken(tokenHash, purpose, consumedAt) {
+    const result = await this.pool.query(
+      `UPDATE account_tokens SET consumed_at=$3
+       WHERE token_hash=$1 AND purpose=$2 AND consumed_at IS NULL AND expires_at > $3
+       RETURNING user_id::text`,
+      [tokenHash, purpose, consumedAt],
+    );
+    return result.rows[0]?.user_id || null;
+  }
+  async deleteSessionsForUser(id, exceptToken) {
+    const userId = await this.internalUserId(id);
+    if (exceptToken) {
+      await this.pool.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2', [
+        userId,
+        tokenHash(exceptToken),
+      ]);
+    } else await this.pool.query('DELETE FROM sessions WHERE user_id=$1', [userId]);
+  }
+  async listSessions(id, currentToken) {
+    const userId = await this.internalUserId(id);
+    const currentHash = currentToken ? tokenHash(currentToken) : '';
+    const result = await this.pool.query(
+      `SELECT token_hash id,created_at,expires_at,user_agent,(token_hash=$2) current
+       FROM sessions WHERE user_id=$1 AND expires_at>now() ORDER BY created_at DESC`,
+      [userId, currentHash],
+    );
+    return result.rows;
+  }
+  async deleteSessionById(id, sessionId) {
+    const userId = await this.internalUserId(id);
+    await this.pool.query('DELETE FROM sessions WHERE user_id=$1 AND token_hash=$2', [
+      userId,
+      sessionId,
+    ]);
+  }
+  async recordSecurityEvent(event) {
+    const userId = event.userId ? await this.internalUserId(event.userId) : null;
+    await this.pool.query(
+      `INSERT INTO security_events (id,user_id,event_type,occurred_at,ip,user_agent,metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [event.id, userId, event.type, event.occurredAt, event.ip, event.userAgent, event.metadata],
     );
   }
   async internalUserId(id) {

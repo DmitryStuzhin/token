@@ -7,6 +7,7 @@ const apiV1 = require('./api-v1.js');
 const { createLogger, requestContext } = require('./logger.js');
 const { securityHeaders, sameOriginProtection, rateLimit } = require('./security.js');
 const { createContainer } = require('../modules/composition.ts');
+const { EmailDelivery } = require('../modules/identity/infrastructure/email-delivery.js');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const OPEN_PAGES = new Set(['/login.html', '/favicon.ico']);
@@ -22,7 +23,9 @@ function createApp(options = {}) {
   app.locals.logger = logger;
   app.locals.live = options.live || { push() {}, presence() {}, invalidate() {} };
   app.locals.services = options.services || createContainer(config);
-  app.locals.auth = options.auth || A.createAuthService(config, app.locals.services.pool);
+  app.locals.email = options.email || new EmailDelivery(config, logger);
+  app.locals.auth =
+    options.auth || A.createAuthService(config, app.locals.services.pool, app.locals.email, logger);
   if (options.repository) {
     app.locals.repository = options.repository;
   } else if (config.databaseDriver === 'postgres') {
@@ -44,8 +47,14 @@ function createApp(options = {}) {
   app.use(securityHeaders(config));
   app.use('/api/v1/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
   app.use('/api/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
-  app.use('/api/v1/auth/register', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
-  app.use('/api/auth/register', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/auth/register', rateLimit({ limit: 20, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/register', rateLimit({ limit: 20, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/auth/email/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/email/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/auth/password/forgot', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/password/forgot', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/auth/password/reset', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/password/reset', rateLimit({ limit: 10, windowMs: 60 * 60_000 }));
   app.use('/api/v1/invites', rateLimit({ limit: 30, windowMs: 15 * 60_000 }));
   app.use('/api/invites', rateLimit({ limit: 30, windowMs: 15 * 60_000 }));
   app.use(sameOriginProtection(config));
@@ -64,12 +73,21 @@ function createApp(options = {}) {
   });
 
   app.get('/health/ready', async (req, res) => {
+    // Почта — не блокирующая зависимость: недоступный SMTP не должен выводить
+    // инстанс из балансировки и обрывать занятия. Он виден как degraded.
+    let email = 'ok';
+    try {
+      await app.locals.email.verify();
+    } catch (error) {
+      email = 'degraded';
+      logger.error('email_check_failed', { requestId: req.id, error: error.message });
+    }
     try {
       await app.locals.auth.ready();
-      res.json({ status: 'ready', checks: { database: 'ok' } });
+      res.json({ status: 'ready', checks: { database: 'ok', email } });
     } catch (error) {
       logger.error('readiness_failed', { requestId: req.id, error: error.message });
-      res.status(503).json({ status: 'not_ready', checks: { database: 'failed' } });
+      res.status(503).json({ status: 'not_ready', checks: { database: 'failed', email } });
     }
   });
 

@@ -96,6 +96,7 @@ test('new passwords use Argon2id and legacy scrypt upgrades after login', async 
   const salt = 'legacy-salt';
   const user = {
     id:'legacy-user', role:'tutor', pass_salt:salt,
+    email_verified_at:new Date().toISOString(),
     pass_hash:crypto.scryptSync('test-password', salt, 64).toString('hex'),
   };
   let upgraded = null;

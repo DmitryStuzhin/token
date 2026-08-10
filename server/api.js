@@ -59,26 +59,69 @@ router.get('/state.js', asyncRoute(async (req, res) => {
 /* ── аутентификация ──────────────────────────────────────────────── */
 router.get('/auth/roles', (req, res) => res.json(A.ROLES));
 
+const authContext = req => ({ ip:req.ip, userAgent:req.headers['user-agent'] });
+
 router.post('/auth/register', asyncRoute(async (req, res) => {
-  const r = await req.app.locals.auth.register(req.body || {});
+  const r = await req.app.locals.auth.register(req.body || {}, authContext(req));
   if (r.error) return res.status(400).json({ error:r.error });
-  const s = await req.app.locals.auth.createSession(r.user.id, req.headers['user-agent']);
-  A.setCookie(res, s.token, s.expires);
   await req.app.locals.services.events.publish(domainEvent({
     name:'UserRegistered', aggregateId:r.user.id,
     correlationId:req.id,
     payload:{ userId:r.user.id, role:r.user.role },
   }));
-  res.json({ ok:true, role:r.user.role, home:A.ROLES[r.user.role].home });
+  res.status(201).json({
+    ok:true, verificationRequired:true, email:r.user.email, emailSent:r.delivered !== false,
+    ...(r.link ? { verificationUrl:r.link } : {}),
+  });
 }));
 
 router.post('/auth/login', asyncRoute(async (req, res) => {
   const { email, password } = req.body || {};
-  const r = await req.app.locals.auth.login(email, password);
-  if (r.error) return res.status(401).json({ error:r.error });
+  const r = await req.app.locals.auth.login(email, password, authContext(req));
+  if (r.error) return res.status(r.code === 'EMAIL_UNVERIFIED' ? 403 : 401)
+    .json({ error:r.error, code:r.code });
   const s = await req.app.locals.auth.createSession(r.user.id, req.headers['user-agent']);
   A.setCookie(res, s.token, s.expires);
   res.json({ ok:true, role:r.user.role, home:A.ROLES[r.user.role].home });
+}));
+
+router.post('/auth/email/resend', asyncRoute(async (req, res) => {
+  const result = await req.app.locals.auth.resendVerification(req.body?.email, authContext(req));
+  res.status(202).json({ ok:true, ...(result.link ? { verificationUrl:result.link } : {}) });
+}));
+
+router.get('/auth/email/verify', asyncRoute(async (req, res) => {
+  const result = await req.app.locals.auth.verifyEmail(String(req.query.token || ''), authContext(req));
+  if (result.error) return res.redirect('/login.html?verified=0');
+  return res.redirect('/login.html?verified=1&mode=signin');
+}));
+
+router.post('/auth/password/forgot', asyncRoute(async (req, res) => {
+  const result = await req.app.locals.auth.requestPasswordReset(req.body?.email, authContext(req));
+  res.status(202).json({ ok:true, ...(result.link ? { resetUrl:result.link } : {}) });
+}));
+
+router.post('/auth/password/reset', asyncRoute(async (req, res) => {
+  const result = await req.app.locals.auth.resetPassword(
+    req.body?.token, req.body?.password, authContext(req),
+  );
+  if (result.error) return res.status(400).json({ error:result.error });
+  A.clearCookie(res);
+  res.json({ ok:true });
+}));
+
+router.get('/auth/sessions', A.requireUser, asyncRoute(async (req, res) => {
+  res.json({ sessions:await req.app.locals.auth.sessions(req.user.id, req.sessionToken) });
+}));
+
+router.delete('/auth/sessions/:id', A.requireUser, asyncRoute(async (req, res) => {
+  await req.app.locals.auth.revokeSession(req.user.id, req.params.id);
+  res.status(204).end();
+}));
+
+router.post('/auth/sessions/revoke-others', A.requireUser, asyncRoute(async (req, res) => {
+  await req.app.locals.auth.revokeOtherSessions(req.user.id, req.sessionToken);
+  res.json({ ok:true });
 }));
 
 router.post('/auth/logout', asyncRoute(async (req, res) => {

@@ -4,6 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const { registerAndLogin } = require('../helpers/auth.js');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-api-v1-'));
 process.env.NODE_ENV = 'test';
@@ -31,14 +32,13 @@ test('API v1 provides screen DTO, pagination, ETag and Problem Details', async (
   assert.equal(Object.hasOwn(guestScreen.body.state, 'tasks'), false);
 
   const tutor = request.agent(app);
-  const registration = await tutor.post('/api/v1/auth/register').send({
+  await registerAndLogin(tutor, {
     name: 'API V1 Репетитор',
     email: 'api-v1-tutor@example.test',
     password: 'test-password',
     role: 'tutor',
     subjects: ['inf'],
-  });
-  assert.equal(registration.status, 200);
+  }, '/api/v1');
 
   const me = await tutor.get('/api/v1/me');
   assert.equal(me.status, 200);
@@ -129,10 +129,9 @@ test('API v1 provides screen DTO, pagination, ETag and Problem Details', async (
   assert.equal(screen.body.state.tasks.some(item => Object.hasOwn(item, 'answer')), false);
 
   const student = request.agent(app);
-  const studentRegistration = await student.post('/api/v1/auth/register').send({
+  await registerAndLogin(student, {
     name:'API V1 Ученик', email:'api-v1-student@example.test', password:'test-password', role:'student',
-  });
-  assert.equal(studentRegistration.status, 200);
+  }, '/api/v1');
   const studentBank = await student.get('/api/v1/screens/student-bank');
   assert.equal(studentBank.status, 200);
   assert.equal(studentBank.body.state.tasks.some(item => Object.hasOwn(item, 'answer')), false);

@@ -64,6 +64,9 @@ const listQuerySchema = z.object({
 const bodySchemas = [
   [/^\/auth\/register$/, z.object({ name:z.string().min(2).max(200), email:z.email(), password:z.string().min(10).max(200), role:z.enum(['student','tutor']), phone:z.string().max(50).optional(), tz:z.string().max(100).optional(), grade:z.coerce.number().int().min(1).max(11).optional(), school:z.string().max(300).optional(), subjects:z.array(z.string()).max(20).optional(), yearsExp:z.coerce.number().min(0).max(80).optional(), rate:z.coerce.number().min(0).optional(), meetingUrl:z.string().max(2000).optional() })],
   [/^\/auth\/login$/, z.object({ email:z.email(), password:z.string().min(1).max(200) })],
+  [/^\/auth\/email\/resend$/, z.object({ email:z.email() })],
+  [/^\/auth\/password\/forgot$/, z.object({ email:z.email() })],
+  [/^\/auth\/password\/reset$/, z.object({ token:z.string().min(20).max(500), password:z.string().min(10).max(200) })],
   [/^\/invites$/, z.object({ kind:z.enum(['enrollment','group']), subjectId:z.string().optional(), groupId:z.string().optional(), maxUses:z.number().int().min(1).max(10000).nullable().optional(), expiresAt:z.iso.datetime().nullable().optional(), note:z.string().max(2000).optional() })],
   [/^\/invites\/accept$/, z.object({ code:z.string().min(3).max(100) })],
   [/^\/groups$/, z.object({ subjectId:z.string(), title:z.string().min(1).max(200), level:z.string().max(100).optional(), schedule:z.string().max(500).optional(), capacity:z.number().int().min(1).max(1000).optional() })],
@@ -101,7 +104,10 @@ function withProblemDetails(req, res, next) {
         404:'Ресурс не найден', 409:'Конфликт', 422:'Ошибка валидации', 500:'Внутренняя ошибка' };
       res.type('application/problem+json');
       return json(problem(res.statusCode, titles[res.statusCode] || 'Ошибка', body.error, req,
-        body.errors ? { errors:body.errors } : {}));
+        {
+          ...(body.errors ? { errors:body.errors } : {}),
+          ...(body.code ? { code:body.code } : {}),
+        }));
     }
     return json(body);
   };

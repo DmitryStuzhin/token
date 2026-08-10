@@ -30,6 +30,7 @@ window.Api = (function () {
     if (!res.ok) {
       const err = new Error((data && (data.detail || data.error)) || 'Ошибка ' + res.status);
       err.status = res.status;
+      err.code = data && data.code;
       err.details = data && data.errors;
       throw err;
     }
@@ -46,6 +47,12 @@ window.Api = (function () {
     /* вход */
     register: data => post('/auth/register', data),
     login: (email, password) => post('/auth/login', { email, password }),
+    resendVerification: email => post('/auth/email/resend', { email }),
+    forgotPassword: email => post('/auth/password/forgot', { email }),
+    resetPassword: (token, password) => post('/auth/password/reset', { token, password }),
+    sessions: () => get('/auth/sessions'),
+    revokeSession: id => del('/auth/sessions/' + encodeURIComponent(id)),
+    revokeOtherSessions: () => post('/auth/sessions/revoke-others'),
     logout: () => post('/auth/logout'),
     me: () => get('/auth/me'),
     roles: () => get('/auth/roles'),

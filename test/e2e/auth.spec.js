@@ -1,6 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const { fixture, withUniqueEmail } = require('../fixtures/scenario.js');
 
+async function submitVerifyAndLogin(page, user) {
+  const responsePromise = page.waitForResponse(response =>
+    response.url().includes('/api/v1/auth/register') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Создать аккаунт' }).click();
+  const registration = await (await responsePromise).json();
+  await expect(page.locator('#out')).toContainText('Письмо отправлено');
+  const verification = new URL(registration.verificationUrl);
+  const verified = await page.context().request.get(verification.pathname + verification.search);
+  expect(verified.ok()).toBeTruthy();
+  await page.goto('/login.html?mode=signin&verified=1');
+  await page.locator('#f-email').fill(user.email);
+  await page.locator('#f-pass').fill(user.password);
+  await page.getByRole('button', { name: 'Войти' }).click();
+}
+
 test('guest is redirected to login and can register as tutor', async ({ page }) => {
   await page.goto('/tutor.html');
   await expect(page).toHaveURL(/\/login\.html\?next=tutor\.html/);
@@ -13,7 +28,7 @@ test('guest is redirected to login and can register as tutor', async ({ page }) 
   await page.locator('#f-name').fill(tutor.name);
   await page.locator('#f-email').fill(tutor.email);
   await page.locator('#f-pass').fill(tutor.password);
-  await page.getByRole('button', { name: 'Создать аккаунт' }).click();
+  await submitVerifyAndLogin(page, tutor);
 
   await expect(page).toHaveURL(/\/tutor\.html$/);
   await expect(page.getByRole('heading', { name: /Сегодня/ })).toBeVisible();
@@ -29,7 +44,7 @@ test('student registration opens an empty but actionable cabinet', async ({ page
   await page.locator('#f-name').fill(student.name);
   await page.locator('#f-email').fill(student.email);
   await page.locator('#f-pass').fill(student.password);
-  await page.getByRole('button', { name: 'Создать аккаунт' }).click();
+  await submitVerifyAndLogin(page, student);
 
   await expect(page).toHaveURL(/\/index\.html$/);
   await expect(page.getByRole('heading', { name: 'Присоединитесь к репетитору' })).toBeVisible();
@@ -56,7 +71,7 @@ test('frontend screens use API v1 bootstrap and never request legacy state', asy
   await page.locator('#f-name').fill(tutor.name);
   await page.locator('#f-email').fill(tutor.email);
   await page.locator('#f-pass').fill(tutor.password);
-  await page.getByRole('button', { name: 'Создать аккаунт' }).click();
+  await submitVerifyAndLogin(page, tutor);
   await expect(page).toHaveURL(/\/tutor\.html$/);
 
   for (const screen of ['students', 'groups', 'invites', 'bank', 'tutor-check', 'tutor']) {

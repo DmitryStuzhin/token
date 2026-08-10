@@ -31,6 +31,13 @@
     <div class="cols c2">
       <div class="stack">
         <section class="card">
+          <div class="head"><div><h2>Безопасность</h2>
+            <div class="hint">Активные входы в аккаунт</div></div>
+            <button class="btn ghost sm" id="revoke-others">Завершить другие</button></div>
+          <div id="account-sessions">${UI.empty('Загружаем сессии…','')}</div>
+        </section>
+
+        <section class="card">
           <div class="head"><h2>Личные данные</h2><a href="#" id="edit">редактировать</a></div>
           <div class="field"><div class="k">ФИО</div><div class="v">${UI.esc(me.name)}</div></div>
           <div class="field"><div class="k">Email</div><div class="v">${UI.esc(me.email)}</div></div>
@@ -122,4 +129,27 @@
     e.preventDefault();
     alert('В прототипе форма редактирования не собрана: поля читаются из users / studentProfiles в assets/db.js.');
   });
+
+  async function loadSessions() {
+    const root = document.getElementById('account-sessions');
+    try {
+      const result = await Api.sessions();
+      root.innerHTML = `<div class="row-list">${result.sessions.map(session => `<div class="row">
+        <span class="grow"><span class="t">${session.current ? 'Текущая сессия' : 'Другой вход'}</span>
+          <span class="s">${UI.esc(session.user_agent || 'Неизвестное устройство')} · ${UI.esc(new Date(session.created_at).toLocaleString('ru-RU'))}</span></span>
+        ${session.current ? '<span class="badge b-green">сейчас</span>' : `<button class="btn ghost sm" data-session-id="${UI.esc(session.id)}">Завершить</button>`}
+      </div>`).join('')}</div>`;
+      root.querySelectorAll('[data-session-id]').forEach(button => button.addEventListener('click', async () => {
+        await Api.revokeSession(button.dataset.sessionId);
+        await loadSessions();
+      }));
+    } catch (error) {
+      root.innerHTML = UI.empty('Не удалось загрузить сессии', UI.esc(error.message));
+    }
+  }
+  document.getElementById('revoke-others').addEventListener('click', async () => {
+    await Api.revokeOtherSessions();
+    await loadSessions();
+  });
+  loadSessions();
 })();

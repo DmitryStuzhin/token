@@ -1,4 +1,7 @@
 const { db } = require('../../../server/db.js');
+const crypto = require('node:crypto');
+
+const sessionId = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 
 class SqliteIdentityStore {
   async emailExists(email) {
@@ -58,6 +61,84 @@ class SqliteIdentityStore {
       credentials.hash,
       credentials.salt,
       id,
+    );
+  }
+  async markEmailVerified(id, verifiedAt) {
+    db.prepare('UPDATE users SET email_verified_at=? WHERE id=?').run(verifiedAt, id);
+  }
+  async replaceAccountToken(input) {
+    db.transaction(() => {
+      db.prepare(
+        'DELETE FROM account_tokens WHERE user_id=? AND purpose=? AND consumed_at IS NULL',
+      ).run(input.userId, input.purpose);
+      db.prepare(
+        `INSERT INTO account_tokens
+        (token_hash,user_id,purpose,created_at,expires_at,requested_ip) VALUES (?,?,?,?,?,?)`,
+      ).run(
+        input.tokenHash,
+        input.userId,
+        input.purpose,
+        input.createdAt,
+        input.expiresAt,
+        input.ip,
+      );
+    })();
+  }
+  async consumeAccountToken(tokenHash, purpose, consumedAt) {
+    const row = db
+      .prepare(
+        `SELECT user_id FROM account_tokens
+      WHERE token_hash=? AND purpose=? AND consumed_at IS NULL AND expires_at>?`,
+      )
+      .get(tokenHash, purpose, consumedAt);
+    if (!row) return null;
+    const changed = db
+      .prepare(
+        `UPDATE account_tokens SET consumed_at=?
+      WHERE token_hash=? AND consumed_at IS NULL`,
+      )
+      .run(consumedAt, tokenHash);
+    return changed.changes ? row.user_id : null;
+  }
+  async deleteSessionsForUser(id, exceptToken) {
+    if (exceptToken)
+      db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(id, exceptToken);
+    else db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+  }
+  async listSessions(id, currentToken) {
+    return db
+      .prepare(
+        `SELECT token,created_at,expires_at,user_agent
+      FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC`,
+      )
+      .all(id, new Date().toISOString())
+      .map((row) => ({
+        id: sessionId(row.token),
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+        user_agent: row.user_agent,
+        current: row.token === currentToken ? 1 : 0,
+      }));
+  }
+  async deleteSessionById(id, sessionId) {
+    const match = db
+      .prepare('SELECT token FROM sessions WHERE user_id=?')
+      .all(id)
+      .find((row) => sessionId === crypto.createHash('sha256').update(row.token).digest('hex'));
+    if (match) db.prepare('DELETE FROM sessions WHERE user_id=? AND token=?').run(id, match.token);
+  }
+  async recordSecurityEvent(event) {
+    db.prepare(
+      `INSERT INTO security_events
+      (id,user_id,event_type,occurred_at,ip,user_agent,metadata) VALUES (?,?,?,?,?,?,?)`,
+    ).run(
+      event.id,
+      event.userId,
+      event.type,
+      event.occurredAt,
+      event.ip,
+      event.userAgent,
+      JSON.stringify(event.metadata || {}),
     );
   }
   async createSession(session) {

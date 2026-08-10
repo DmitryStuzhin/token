@@ -4,6 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const { registerAndLogin } = require('../helpers/auth.js');
 const { fixture } = require('../fixtures/scenario.js');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-http-'));
@@ -34,7 +35,7 @@ test('liveness and readiness expose request correlation', async () => {
 
   const ready = await request(app).get('/health/ready');
   assert.equal(ready.status, 200);
-  assert.deepEqual(ready.body, { status: 'ready', checks: { database: 'ok' } });
+  assert.deepEqual(ready.body, { status: 'ready', checks: { database: 'ok', email: 'ok' } });
   assert.match(ready.headers['x-request-id'], /^[0-9a-f-]{36}$/);
 });
 
@@ -46,11 +47,9 @@ test('guest cannot receive cabinet markup', async () => {
 
 test('student session cannot execute tutor commands or see reference answers', async () => {
   const student = request.agent(app);
-  const registered = await student.post('/api/auth/register').send({
+  await registerAndLogin(student, {
     ...fixture.student,
   });
-  assert.equal(registered.status, 200);
-  assert.match(registered.headers['set-cookie'][0], /token_sid=/);
 
   const tasks = await student.get('/api/tasks');
   assert.equal(tasks.status, 200);
@@ -73,37 +72,37 @@ test('main learning flow works through public API', async () => {
   const otherTutor = request.agent(app);
   const otherStudent = request.agent(app);
 
-  assert.equal((await tutor.post('/api/auth/register').send({
+  await registerAndLogin(tutor, {
     name: 'Сквозной Репетитор',
     email: 'flow-tutor@example.test',
     password: 'test-password',
     role: 'tutor',
     subjects: ['inf'],
-  })).status, 200);
+  });
 
-  assert.equal((await student.post('/api/auth/register').send({
+  await registerAndLogin(student, {
     name: 'Сквозной Ученик',
     email: 'flow-student@example.test',
     password: 'test-password',
     role: 'student',
     grade: 11,
-  })).status, 200);
+  });
 
-  assert.equal((await otherTutor.post('/api/auth/register').send({
+  await registerAndLogin(otherTutor, {
     name: 'Другой Репетитор',
     email: 'other-tutor@example.test',
     password: 'test-password',
     role: 'tutor',
     subjects: ['inf'],
-  })).status, 200);
+  });
 
-  assert.equal((await otherStudent.post('/api/auth/register').send({
+  await registerAndLogin(otherStudent, {
     name: 'Другой Ученик',
     email: 'other-student@example.test',
     password: 'test-password',
     role: 'student',
     grade: 11,
-  })).status, 200);
+  });
 
   const invite = await tutor.post('/api/invites').send({
     ...fixture.individualRelationship,
@@ -206,7 +205,7 @@ test('main learning flow works through public API', async () => {
 
 test('invalid JSON has a generic response without stack trace', async () => {
   const response = await request(app)
-    .post('/api/auth/login')
+    .post('/api/tasks/import')
     .set('Content-Type', 'application/json')
     .send('{broken-json');
   assert.equal(response.status, 400);
