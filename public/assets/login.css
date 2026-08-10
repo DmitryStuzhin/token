@@ -23,3 +23,13 @@
   .quick a{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
     border-radius:11px;text-decoration:none;color:inherit;margin-bottom:8px}
   .quick a:hover{border-color:var(--brand)}
+  /* .text-action живёт в стилях кабинета, а страница входа их не подключает —
+     без этого правила ссылки-кнопки рисуются браузерными «серыми» кнопками. */
+  .text-action{display:inline-block;margin:10px 12px 0 0;padding:0;border:0;
+    background:transparent;color:var(--brand);font:inherit;font-size:12px;font-weight:700;
+    cursor:pointer}
+  .text-action:hover{text-decoration:underline}
+  /* Код переписывают из письма посимвольно: разрядка и моноширинный шрифт
+     заметно снижают долю опечаток. */
+  #f-code{font:600 20px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:3px;
+    text-align:center;text-transform:uppercase}

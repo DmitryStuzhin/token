@@ -5,6 +5,9 @@
 
   let mode = UI.qs('mode') || (UI.qs('next') ? 'signin' : 'signup');
   let role = UI.qs('role') || 'tutor';
+  let challenge = null;
+  let pendingEmail = '';
+  let emailHint = '';
 
   function go(res) {
     location.href = next ? '/' + next : res.home;
@@ -23,17 +26,30 @@
     const signup = mode === 'signup';
     const forgot = mode === 'forgot';
     const reset = mode === 'reset';
+    const code = mode === 'code';
+    const confirm = mode === 'confirm';
+    const codeStep = code || confirm;
     document.getElementById('box').innerHTML = `
       <h1>Token</h1>
       <div class="lead">Подготовка к экзамену с репетитором</div>
 
-      <div class="tabs ${forgot || reset ? 'csp-u-050' : ''}">
+      <div class="tabs ${forgot || reset || codeStep ? 'csp-u-050' : ''}">
         <button data-mode="signin" class="${signup ? '' : 'on'}">Вход</button>
         <button data-mode="signup" class="${signup ? 'on' : ''}">Регистрация</button>
       </div>
 
       <section class="card">
-        ${reset ? `
+        ${codeStep ? `
+          <h2>${code ? 'Код для входа' : 'Подтвердите email'}</h2>
+          <p class="hint">Отправили код на ${UI.esc(emailHint || pendingEmail)}.
+            ${code ? 'Код действует 10 минут.' : 'В письме есть и код, и ссылка — подойдёт любое.'}</p>
+          <div class="fld"><label>Код из письма</label>
+            <input id="f-code" inputmode="latin" autocomplete="one-time-code"
+              placeholder="K7M-2PQ-9XZ" maxlength="11" spellcheck="false"></div>
+          <button class="btn csp-u-072" id="do-code">Продолжить</button>
+          <button class="text-action" id="do-resend-code">Отправить код ещё раз</button>
+          <button class="text-action" data-mode="signin">Вернуться ко входу</button>
+        ` : reset ? `
           <h2>Новый пароль</h2>
           <p class="hint">Ссылка одноразовая. После смены пароля все старые сессии завершатся.</p>
           <div class="fld"><label>Новый пароль</label>
@@ -72,7 +88,7 @@
 
 
       <div class="note n-grey csp-u-055">
-        Пароль защищён Argon2id, email подтверждается одноразовой ссылкой,
+        Пароль защищён Argon2id, вход подтверждается одноразовым кодом из письма,
         сессия живёт в httpOnly-куке — из JavaScript её не прочитать.
       </div>`;
 
@@ -99,12 +115,27 @@
     if (si) si.addEventListener('click', doSignin);
     document.getElementById('do-forgot')?.addEventListener('click', doForgot);
     document.getElementById('do-reset')?.addEventListener('click', doReset);
+    document.getElementById('do-code')?.addEventListener('click', doCode);
+    document.getElementById('do-resend-code')?.addEventListener('click', doResendCode);
+
+    const codeInput = document.getElementById('f-code');
+    if (codeInput) {
+      // Код диктуют и переписывают руками, поэтому принимаем что угодно и сами
+      // приводим к виду из письма: заглавные буквы и дефисы через три символа.
+      codeInput.addEventListener('input', () => {
+        const flat = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9);
+        codeInput.value = (flat.match(/.{1,3}/g) || []).join('-');
+      });
+      codeInput.focus();
+    }
 
     const box = document.getElementById('box');
     box.querySelectorAll('input').forEach(inp =>
       inp.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
-        if (reset) doReset(); else if (forgot) doForgot(); else if (signup) doSignup(); else doSignin();
+        if (codeStep) doCode();
+        else if (reset) doReset(); else if (forgot) doForgot();
+        else if (signup) doSignup(); else doSignin();
       }));
     const verified = UI.qs('verified');
     if (verified === '1') document.getElementById('out').innerHTML = '<div class="verdict v-ok">Email подтверждён. Теперь войдите.</div>';
@@ -152,18 +183,14 @@
     if (btn) btn.disabled = true;
     try {
       const result = await Api.register(data);
-      const out = document.getElementById('out');
+      pendingEmail = result.email;
+      emailHint = result.email;
+      mode = 'confirm';
+      render();
       if (result.emailSent === false) {
-        out.innerHTML = `<div class="verdict v-wait">Аккаунт создан, но письмо на ${UI.esc(result.email)} не ушло. <button id="resend-email">Отправить ещё раз</button></div>`;
-        out.querySelector('#resend-email').addEventListener('click', async () => {
-          await Api.resendVerification(result.email);
-          out.innerHTML = '<div class="verdict v-ok">Письмо отправлено повторно. Проверьте почту.</div>';
-        });
-        btn.textContent = 'Аккаунт создан';
-        return;
+        document.getElementById('out').innerHTML =
+          '<div class="verdict v-wait">Аккаунт создан, но письмо не ушло. Нажмите «Отправить код ещё раз».</div>';
       }
-      out.innerHTML = `<div class="verdict v-ok">Письмо отправлено на ${UI.esc(result.email)}. Подтвердите адрес, затем войдите.</div>`;
-      btn.textContent = 'Письмо отправлено';
     }
     catch (e) {
       if (btn) btn.disabled = false;
@@ -173,21 +200,72 @@
 
   async function doSignin() {
     const btn = document.getElementById('do-signin');
+    const email = (document.getElementById('f-email') || {}).value;
     if (btn) btn.disabled = true;
     try {
-      go(await Api.login(
-        (document.getElementById('f-email') || {}).value,
-        (document.getElementById('f-pass') || {}).value));
+      const result = await Api.login(email, (document.getElementById('f-pass') || {}).value);
+      // Доверенное устройство пускает сразу, новое — уводит на ввод кода.
+      if (!result.codeRequired) return go(result);
+      challenge = result.challenge;
+      pendingEmail = email;
+      emailHint = result.emailHint || email;
+      mode = 'code';
+      render();
+      if (result.emailSent === false) {
+        document.getElementById('out').innerHTML =
+          '<div class="verdict v-wait">Письмо не ушло. Нажмите «Отправить код ещё раз».</div>';
+      }
     } catch (e) {
       if (btn) btn.disabled = false;
-      const email = (document.getElementById('f-email') || {}).value;
       document.getElementById('out').innerHTML = e.code === 'EMAIL_UNVERIFIED'
         ? `<div class="verdict v-wait">${UI.esc(e.message)} <button id="resend-email">Отправить письмо ещё раз</button></div>`
         : `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
       document.getElementById('resend-email')?.addEventListener('click', async () => {
         await Api.resendVerification(email);
-        document.getElementById('out').innerHTML = '<div class="verdict v-ok">Новое письмо отправлено.</div>';
+        pendingEmail = email;
+        emailHint = email;
+        mode = 'confirm';
+        render();
       });
+    }
+  }
+
+  async function doCode() {
+    const button = document.getElementById('do-code');
+    const value = (document.getElementById('f-code') || {}).value;
+    const out = document.getElementById('out');
+    button.disabled = true;
+    try {
+      if (mode === 'code') {
+        go(await Api.loginCode(challenge, value));
+      } else {
+        await Api.verifyEmailCode(pendingEmail, value);
+        mode = 'signin';
+        render();
+        document.getElementById('out').innerHTML =
+          '<div class="verdict v-ok">Email подтверждён. Теперь войдите.</div>';
+      }
+    } catch (e) {
+      button.disabled = false;
+      out.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}${
+        e.attemptsLeft ? `. Осталось попыток: ${e.attemptsLeft}` : ''}.</div>`;
+      const input = document.getElementById('f-code');
+      if (input) { input.value = ''; input.focus(); }
+    }
+  }
+
+  async function doResendCode() {
+    const out = document.getElementById('out');
+    try {
+      if (mode === 'code') {
+        const result = await Api.resendLoginCode(challenge);
+        challenge = result.challenge;
+      } else {
+        await Api.resendVerification(pendingEmail);
+      }
+      out.innerHTML = '<div class="verdict v-ok">Новый код отправлен. Прежний больше не действует.</div>';
+    } catch (e) {
+      out.innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
     }
   }
 

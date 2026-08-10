@@ -52,6 +52,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/login/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Второй шаг входа. Challenge выдаётся за верный пароль, код доказывает владение почтой. Успех запоминает устройство на 30 дней. */
+        post: operations["completeLoginWithCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login/code/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resendLoginCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/email/verify-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verifyEmailWithCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/email/resend": {
         parameters: {
             query?: never;
@@ -437,6 +486,14 @@ export interface components {
             email: string;
             password: string;
         };
+        LoginCodeRequest: {
+            challenge: string;
+            /**
+             * @description Код из письма. Регистр и разделители произвольны.
+             * @example K7M-2PQ-9XZ
+             */
+            code: string;
+        };
         EmailRequest: {
             /** Format: email */
             email: string;
@@ -618,6 +675,63 @@ export interface operations {
             200: components["responses"]["CommandSuccess"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+        };
+    };
+    completeLoginWithCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCodeRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["CommandSuccess"];
+            400: components["responses"]["Problem"];
+        };
+    };
+    resendLoginCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    challenge: string;
+                };
+            };
+        };
+        responses: {
+            202: components["responses"]["CommandSuccess"];
+            400: components["responses"]["Problem"];
+        };
+    };
+    verifyEmailWithCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            200: components["responses"]["CommandSuccess"];
+            400: components["responses"]["Problem"];
         };
     };
     resendEmailVerification: {

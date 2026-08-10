@@ -73,7 +73,8 @@ class SqliteIdentityStore {
       ).run(input.userId, input.purpose);
       db.prepare(
         `INSERT INTO account_tokens
-        (token_hash,user_id,purpose,created_at,expires_at,requested_ip) VALUES (?,?,?,?,?,?)`,
+        (token_hash,user_id,purpose,created_at,expires_at,requested_ip,code_hash)
+        VALUES (?,?,?,?,?,?,?)`,
       ).run(
         input.tokenHash,
         input.userId,
@@ -81,8 +82,58 @@ class SqliteIdentityStore {
         input.createdAt,
         input.expiresAt,
         input.ip,
+        input.codeHash || null,
       );
     })();
+  }
+  async findAccountToken(criteria, now) {
+    const byHandle = Boolean(criteria.tokenHash);
+    return (
+      db
+        .prepare(
+          `SELECT token_hash,user_id,code_hash,attempts,expires_at FROM account_tokens
+        WHERE ${byHandle ? 'token_hash=?' : 'user_id=?'} AND purpose=?
+        AND consumed_at IS NULL AND expires_at>?`,
+        )
+        .get(byHandle ? criteria.tokenHash : criteria.userId, criteria.purpose, now) || null
+    );
+  }
+  async countAccountTokenAttempt(tokenHash) {
+    db.prepare('UPDATE account_tokens SET attempts=attempts+1 WHERE token_hash=?').run(tokenHash);
+    const row = db.prepare('SELECT attempts FROM account_tokens WHERE token_hash=?').get(tokenHash);
+    return row ? row.attempts : 0;
+  }
+  async deleteAccountToken(tokenHash) {
+    db.prepare('DELETE FROM account_tokens WHERE token_hash=?').run(tokenHash);
+  }
+  async createTrustedDevice(device) {
+    db.prepare(
+      `INSERT INTO trusted_devices
+      (id,user_id,token_hash,created_at,last_seen_at,expires_at,user_agent)
+      VALUES (?,?,?,?,?,?,?)`,
+    ).run(
+      device.id,
+      device.userId,
+      device.tokenHash,
+      device.createdAt,
+      device.createdAt,
+      device.expiresAt,
+      device.userAgent,
+    );
+  }
+  async touchTrustedDevice(userId, tokenHash, now) {
+    const row = db
+      .prepare(
+        `SELECT id FROM trusted_devices
+      WHERE user_id=? AND token_hash=? AND expires_at>?`,
+      )
+      .get(userId, tokenHash, now);
+    if (!row) return null;
+    db.prepare('UPDATE trusted_devices SET last_seen_at=? WHERE id=?').run(now, row.id);
+    return row.id;
+  }
+  async deleteTrustedDevicesForUser(userId) {
+    db.prepare('DELETE FROM trusted_devices WHERE user_id=?').run(userId);
   }
   async consumeAccountToken(tokenHash, purpose, consumedAt) {
     const row = db

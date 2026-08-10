@@ -28,7 +28,10 @@ app.locals.live = live.create(server, {
 });
 
 function cookieOf(response) {
-  return response.headers['set-cookie'][0].split(';')[0];
+  // Успешный вход ставит две куки — сессию и доверенное устройство, — поэтому
+  // выбираем по имени, а не по порядку.
+  const session = response.headers['set-cookie'].find(value => value.startsWith('token_sid='));
+  return session.split(';')[0];
 }
 
 function waitForMessage(ws, predicate, timeoutMs = 3000) {

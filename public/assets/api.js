@@ -31,6 +31,7 @@ window.Api = (function () {
       const err = new Error((data && (data.detail || data.error)) || 'Ошибка ' + res.status);
       err.status = res.status;
       err.code = data && data.code;
+      err.attemptsLeft = data && data.attemptsLeft;
       err.details = data && data.errors;
       throw err;
     }
@@ -47,6 +48,9 @@ window.Api = (function () {
     /* вход */
     register: data => post('/auth/register', data),
     login: (email, password) => post('/auth/login', { email, password }),
+    loginCode: (challenge, code) => post('/auth/login/code', { challenge, code }),
+    resendLoginCode: challenge => post('/auth/login/code/resend', { challenge }),
+    verifyEmailCode: (email, code) => post('/auth/email/verify-code', { email, code }),
     resendVerification: email => post('/auth/email/resend', { email }),
     forgotPassword: email => post('/auth/password/forgot', { email }),
     resetPassword: (token, password) => post('/auth/password/reset', { token, password }),
