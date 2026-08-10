@@ -18,6 +18,10 @@ test('production cookies are secure by default', () => {
     NODE_ENV: 'production',
     DATABASE_URL: 'postgresql://token:secret@127.0.0.1:5432/token',
     PUBLIC_ORIGIN: 'https://tokenapp.ru',
+    SMTP_HOST: 'smtp.example.test',
+    SMTP_USER: 'token@example.test',
+    SMTP_PASSWORD: 'test-password',
+    EMAIL_FROM: 'Token <token@example.test>',
   });
   assert.equal(config.cookieSecure, true);
   assert.equal(config.databaseDriver, 'postgres');

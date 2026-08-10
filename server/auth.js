@@ -10,13 +10,19 @@ const ROLES = {
 };
 const uid = () => uuidv7();
 
-function createAuthService(config, pool) {
+function createAuthService(config, pool, email, logger) {
+  const options = {
+    email,
+    logger,
+    publicOrigin:config.publicOrigin || `http://localhost:${config.port}`,
+    exposeTokens:config.nodeEnv === 'test',
+  };
   if (config.databaseDriver === 'postgres') {
     const { PostgresIdentityStore } = require('../modules/identity/infrastructure/postgres-identity-store.js');
-    return new AuthService(new PostgresIdentityStore(pool), ROLES);
+    return new AuthService(new PostgresIdentityStore(pool), ROLES, options);
   }
   const { SqliteIdentityStore } = require('../modules/identity/infrastructure/sqlite-identity-store.js');
-  return new AuthService(new SqliteIdentityStore(), ROLES);
+  return new AuthService(new SqliteIdentityStore(), ROLES, options);
 }
 
 function attach(req, res, next) {

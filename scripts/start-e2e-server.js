@@ -12,5 +12,6 @@ process.env.PORT = '3101';
 process.env.TOKEN_DB = databaseFile;
 process.env.COOKIE_SECURE = 'false';
 process.env.LOG_LEVEL = 'silent';
+process.env.TRUST_PROXY = 'true';
 
 require('../server/index.js');

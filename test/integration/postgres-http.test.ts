@@ -13,6 +13,7 @@ import { PostgresSchedulingRepository } from '../../modules/scheduling/infrastru
 import { extractSqlite } from '../../packages/db/src/sqlite-migration/extract.js';
 import { loadPostgres } from '../../packages/db/src/sqlite-migration/load.js';
 import { transformDataset } from '../../packages/db/src/sqlite-migration/transform.js';
+import { loadMigrations } from '../../packages/db/src/migrator.js';
 
 void test('public HTTP learning flow runs on the PostgreSQL adapter', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'token-pg-http-'));
@@ -26,16 +27,8 @@ void test('public HTTP learning flow runs on the PostgreSQL adapter', async () =
   sqlite.db.close();
 
   const database = new PGlite();
-  const migration = await fs.readFile(
-    path.join(process.cwd(), 'packages', 'db', 'migrations', '001_initial.sql'),
-    'utf8',
-  );
-  await database.exec(
-    migration.slice(
-      migration.indexOf('-- migrate:up') + '-- migrate:up'.length,
-      migration.indexOf('-- migrate:down'),
-    ),
-  );
+  const migrations = await loadMigrations(path.join(process.cwd(), 'packages', 'db', 'migrations'));
+  for (const migration of migrations) await database.exec(migration.up);
   const query = async (sql: string, parameters?: readonly unknown[]) => {
     const result = await database.query(sql, parameters ? [...parameters] : []);
     return {
@@ -59,7 +52,7 @@ void test('public HTTP learning flow runs on the PostgreSQL adapter', async () =
     createApp(options: Readonly<Record<string, unknown>>): ReturnType<typeof import('express')>;
   };
   const { AuthService } = require('../../modules/identity/application/auth-service.js') as {
-    AuthService: new (store: unknown, roles: unknown) => unknown;
+    AuthService: new (store: unknown, roles: unknown, options?: Record<string, unknown>) => unknown;
   };
   const { PostgresIdentityStore } =
     require('../../modules/identity/infrastructure/postgres-identity-store.js') as {
@@ -87,29 +80,44 @@ void test('public HTTP learning flow runs on the PostgreSQL adapter', async () =
   const app = createApp({
     config,
     services,
-    auth: new AuthService(new PostgresIdentityStore(pool), Auth.ROLES),
+    auth: new AuthService(new PostgresIdentityStore(pool), Auth.ROLES, {
+      exposeTokens: true,
+      publicOrigin: 'http://localhost:3000',
+    }),
     repository: new PostgresPlatformRepository(pool),
   });
 
   try {
     const tutor = request.agent(app);
     const student = request.agent(app);
-    const tutorRegistration = await tutor.post('/api/auth/register').send({
+    const register = async (
+      agent: ReturnType<typeof request.agent>,
+      data: Record<string, unknown>,
+    ) => {
+      const registration = await agent.post('/api/auth/register').send(data);
+      assert.equal(registration.status, 201, registration.text);
+      const verification = new URL(String(registration.body.verificationUrl));
+      assert.equal((await agent.get(verification.pathname + verification.search)).status, 302);
+      const login = await agent.post('/api/auth/login').send({
+        email: data.email,
+        password: data.password,
+      });
+      assert.equal(login.status, 200, login.text);
+    };
+    await register(tutor, {
       name: 'Postgres Tutor',
       email: 'pg-tutor@example.test',
       password: 'test-password',
       role: 'tutor',
       subjects: ['inf'],
     });
-    assert.equal(tutorRegistration.status, 200, tutorRegistration.text);
-    const studentRegistration = await student.post('/api/auth/register').send({
+    await register(student, {
       name: 'Postgres Student',
       email: 'pg-student@example.test',
       password: 'test-password',
       role: 'student',
       grade: 11,
     });
-    assert.equal(studentRegistration.status, 200, studentRegistration.text);
     const invite = await tutor.post('/api/invites').send({
       kind: 'enrollment',
       subjectId: 'inf',

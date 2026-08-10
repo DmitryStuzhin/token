@@ -7,10 +7,19 @@ async function post(request, path, data) {
   return request.post(path, { data, headers: { 'Idempotency-Key': key() } });
 }
 async function register(request, user, prefix) {
+  const data = withUniqueEmail(user, prefix);
+  const forwardedFor = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
   const response = await request.post('/api/v1/auth/register', {
-    data: withUniqueEmail(user, prefix),
+    data,
   });
   expect(response.ok()).toBeTruthy();
+  const registration = await response.json();
+  const verification = new URL(registration.verificationUrl);
+  expect((await request.get(verification.pathname + verification.search)).ok()).toBeTruthy();
+  expect((await request.post('/api/v1/auth/login', {
+    data:{ email:data.email, password:data.password },
+    headers:{ 'X-Forwarded-For':forwardedFor },
+  })).ok()).toBeTruthy();
 }
 
 test('production lesson keeps roles, realtime editing and statistics consistent', async ({

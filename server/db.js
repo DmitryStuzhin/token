@@ -36,6 +36,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL, expires_at TEXT NOT NULL, user_agent TEXT);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS account_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  consumed_at TEXT, requested_ip TEXT);
+CREATE INDEX IF NOT EXISTS idx_account_tokens_lookup ON account_tokens(purpose, token_hash, expires_at);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL, occurred_at TEXT NOT NULL, ip TEXT,
+  user_agent TEXT, metadata TEXT NOT NULL DEFAULT '{}');
+CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, occurred_at);
+
 CREATE TABLE IF NOT EXISTS student_profiles (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   grade INTEGER, school TEXT, started_at TEXT);
@@ -145,6 +158,8 @@ ensureColumn('tasks', 'task_type', "TEXT NOT NULL DEFAULT 'answer'");
 ensureColumn('tasks', 'attachments', "TEXT NOT NULL DEFAULT '[]'");
 db.prepare("UPDATE tasks SET published_at = datetime('now') WHERE published_at IS NULL").run();
 db.prepare("UPDATE tasks SET published_at = replace(published_at, ' ', 'T') || 'Z' WHERE published_at NOT LIKE '%T%'").run();
+ensureColumn('users', 'email_verified_at', 'TEXT');
+db.prepare('UPDATE users SET email_verified_at=created_at WHERE email_verified_at IS NULL').run();
 
 /* ── заполнение справочников ─────────────────────────────────────── */
 function seedReference() {

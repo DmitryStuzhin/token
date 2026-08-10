@@ -23,6 +23,12 @@ const environmentSchema = z.object({
   WRITE_FREEZE: booleanFromEnvironment.default(false),
   PUBLIC_ORIGIN: z.url().optional(),
   TRUST_PROXY: booleanFromEnvironment.optional(),
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
+  SMTP_SECURE: booleanFromEnvironment.default(false),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(3).optional(),
 });
 
 export interface AppConfig {
@@ -40,6 +46,12 @@ export interface AppConfig {
   readonly writeFreeze: boolean;
   readonly publicOrigin: string | null;
   readonly trustProxy: boolean;
+  readonly smtpHost: string | null;
+  readonly smtpPort: number;
+  readonly smtpSecure: boolean;
+  readonly smtpUser: string | null;
+  readonly smtpPassword: string | null;
+  readonly emailFrom: string | null;
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readonly<AppConfig> {
@@ -57,6 +69,14 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readon
   if (value.NODE_ENV === 'production' && !value.PUBLIC_ORIGIN) {
     throw new Error('Invalid environment: PUBLIC_ORIGIN is required in production');
   }
+  if (
+    value.NODE_ENV === 'production' &&
+    (!value.SMTP_HOST || !value.SMTP_USER || !value.SMTP_PASSWORD || !value.EMAIL_FROM)
+  ) {
+    throw new Error(
+      'Invalid environment: SMTP_HOST, SMTP_USER, SMTP_PASSWORD and EMAIL_FROM are required in production',
+    );
+  }
   return Object.freeze({
     nodeEnv: value.NODE_ENV,
     port: value.PORT,
@@ -72,5 +92,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Readon
     writeFreeze: value.WRITE_FREEZE,
     publicOrigin: value.PUBLIC_ORIGIN ? new URL(value.PUBLIC_ORIGIN).origin : null,
     trustProxy: value.TRUST_PROXY ?? value.NODE_ENV === 'production',
+    smtpHost: value.SMTP_HOST ?? null,
+    smtpPort: value.SMTP_PORT,
+    smtpSecure: value.SMTP_SECURE,
+    smtpUser: value.SMTP_USER ?? null,
+    smtpPassword: value.SMTP_PASSWORD ?? null,
+    emailFrom: value.EMAIL_FROM ?? null,
   });
 }

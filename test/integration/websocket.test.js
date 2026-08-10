@@ -5,6 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const { registerAndLogin } = require('../helpers/auth.js');
 const WebSocket = require('ws');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'token-ws-'));
@@ -85,27 +86,22 @@ test('lesson room authorizes participants and delivers draft, coaching, laser an
   const outsider = request.agent(app);
   const outsiderTutor = request.agent(app);
 
-  const tutorRegistration = await tutor.post('/api/auth/register').send({
+  const tutorRegistration = (await registerAndLogin(tutor, {
     ...fixture.tutor,
     email: 'ws-tutor@example.test',
-  });
-  const studentRegistration = await student.post('/api/auth/register').send({
+  })).login;
+  const studentRegistration = (await registerAndLogin(student, {
     ...fixture.student,
     email: 'ws-student@example.test',
-  });
-  const outsiderRegistration = await outsider.post('/api/auth/register').send({
+  })).login;
+  const outsiderRegistration = (await registerAndLogin(outsider, {
     ...fixture.secondStudent,
     email: 'ws-outsider@example.test',
-  });
-  const outsiderTutorRegistration = await outsiderTutor.post('/api/auth/register').send({
+  })).login;
+  await registerAndLogin(outsiderTutor, {
     ...fixture.tutor,
     email: 'ws-outsider-tutor@example.test',
   });
-  assert.equal(tutorRegistration.status, 200);
-  assert.equal(studentRegistration.status, 200);
-  assert.equal(outsiderRegistration.status, 200);
-  assert.equal(outsiderTutorRegistration.status, 200);
-
   const invite = await tutor.post('/api/invites').send({
     ...fixture.individualRelationship,
   });

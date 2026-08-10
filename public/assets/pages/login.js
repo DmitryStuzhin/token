@@ -21,17 +21,32 @@
 
   function render() {
     const signup = mode === 'signup';
+    const forgot = mode === 'forgot';
+    const reset = mode === 'reset';
     document.getElementById('box').innerHTML = `
       <h1>Token</h1>
       <div class="lead">Подготовка к экзамену с репетитором</div>
 
-      <div class="tabs">
+      <div class="tabs ${forgot || reset ? 'csp-u-050' : ''}">
         <button data-mode="signin" class="${signup ? '' : 'on'}">Вход</button>
         <button data-mode="signup" class="${signup ? 'on' : ''}">Регистрация</button>
       </div>
 
       <section class="card">
-        ${signup ? `
+        ${reset ? `
+          <h2>Новый пароль</h2>
+          <p class="hint">Ссылка одноразовая. После смены пароля все старые сессии завершатся.</p>
+          <div class="fld"><label>Новый пароль</label>
+            <input id="f-pass" type="password" minlength="10" autocomplete="new-password"></div>
+          <button class="btn csp-u-072" id="do-reset">Сохранить пароль</button>
+        ` : forgot ? `
+          <h2>Восстановление доступа</h2>
+          <p class="hint">Отправим одноразовую ссылку, если аккаунт существует.</p>
+          <div class="fld"><label>Email</label>
+            <input id="f-email" type="email" autocomplete="email"></div>
+          <button class="btn csp-u-072" id="do-forgot">Отправить ссылку</button>
+          <button class="text-action" data-mode="signin">Вернуться ко входу</button>
+        ` : signup ? `
           <div class="hint csp-u-046">Кем вы будете пользоваться Token?</div>
           ${rolesHTML()}
           <div class="fld"><label>Имя и фамилия</label>
@@ -50,13 +65,14 @@
             <input id="f-pass" type="password" autocomplete="current-password"></div>
           <button class="btn csp-u-072" id="do-signin">
             Войти</button>
+          <button class="text-action" data-mode="forgot">Забыли пароль?</button>
         `}
         <div id="out"></div>
       </section>
 
 
       <div class="note n-grey csp-u-055">
-        Аккаунт создаётся на сервере: пароль солится и хешируется scrypt,
+        Пароль защищён Argon2id, email подтверждается одноразовой ссылкой,
         сессия живёт в httpOnly-куке — из JavaScript её не прочитать.
       </div>`;
 
@@ -81,10 +97,18 @@
     if (su) su.addEventListener('click', doSignup);
     const si = document.getElementById('do-signin');
     if (si) si.addEventListener('click', doSignin);
+    document.getElementById('do-forgot')?.addEventListener('click', doForgot);
+    document.getElementById('do-reset')?.addEventListener('click', doReset);
 
     const box = document.getElementById('box');
     box.querySelectorAll('input').forEach(inp =>
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') (signup ? doSignup() : doSignin()); }));
+      inp.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        if (reset) doReset(); else if (forgot) doForgot(); else if (signup) doSignup(); else doSignin();
+      }));
+    const verified = UI.qs('verified');
+    if (verified === '1') document.getElementById('out').innerHTML = '<div class="verdict v-ok">Email подтверждён. Теперь войдите.</div>';
+    if (verified === '0') document.getElementById('out').innerHTML = '<div class="verdict v-no">Ссылка недействительна или истекла.</div>';
   }
 
   function renderExtra() {
@@ -126,7 +150,21 @@
       subjects: [...document.querySelectorAll('.f-subj:checked')].map(x => x.value),
     };
     if (btn) btn.disabled = true;
-    try { go(await Api.register(data)); }
+    try {
+      const result = await Api.register(data);
+      const out = document.getElementById('out');
+      if (result.emailSent === false) {
+        out.innerHTML = `<div class="verdict v-wait">Аккаунт создан, но письмо на ${UI.esc(result.email)} не ушло. <button id="resend-email">Отправить ещё раз</button></div>`;
+        out.querySelector('#resend-email').addEventListener('click', async () => {
+          await Api.resendVerification(result.email);
+          out.innerHTML = '<div class="verdict v-ok">Письмо отправлено повторно. Проверьте почту.</div>';
+        });
+        btn.textContent = 'Аккаунт создан';
+        return;
+      }
+      out.innerHTML = `<div class="verdict v-ok">Письмо отправлено на ${UI.esc(result.email)}. Подтвердите адрес, затем войдите.</div>`;
+      btn.textContent = 'Письмо отправлено';
+    }
     catch (e) {
       if (btn) btn.disabled = false;
       document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
@@ -142,7 +180,41 @@
         (document.getElementById('f-pass') || {}).value));
     } catch (e) {
       if (btn) btn.disabled = false;
-      document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+      const email = (document.getElementById('f-email') || {}).value;
+      document.getElementById('out').innerHTML = e.code === 'EMAIL_UNVERIFIED'
+        ? `<div class="verdict v-wait">${UI.esc(e.message)} <button id="resend-email">Отправить письмо ещё раз</button></div>`
+        : `<div class="verdict v-no">${UI.esc(e.message)}</div>`;
+      document.getElementById('resend-email')?.addEventListener('click', async () => {
+        await Api.resendVerification(email);
+        document.getElementById('out').innerHTML = '<div class="verdict v-ok">Новое письмо отправлено.</div>';
+      });
+    }
+  }
+
+  async function doForgot() {
+    const button = document.getElementById('do-forgot');
+    button.disabled = true;
+    try {
+      await Api.forgotPassword((document.getElementById('f-email') || {}).value);
+      document.getElementById('out').innerHTML = '<div class="verdict v-ok">Если аккаунт существует, письмо уже отправлено.</div>';
+    } catch (error) {
+      button.disabled = false;
+      document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(error.message)}</div>`;
+    }
+  }
+
+  async function doReset() {
+    const button = document.getElementById('do-reset');
+    button.disabled = true;
+    try {
+      await Api.resetPassword(UI.qs('token'), (document.getElementById('f-pass') || {}).value);
+      mode = 'signin';
+      history.replaceState(null, '', '/login.html?mode=signin&reset=1');
+      render();
+      document.getElementById('out').innerHTML = '<div class="verdict v-ok">Пароль изменён. Войдите снова.</div>';
+    } catch (error) {
+      button.disabled = false;
+      document.getElementById('out').innerHTML = `<div class="verdict v-no">${UI.esc(error.message)}</div>`;
     }
   }
 
