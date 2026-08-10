@@ -10,6 +10,10 @@ const { createContainer } = require('../modules/composition.ts');
 const { EmailDelivery } = require('../modules/identity/infrastructure/email-delivery.js');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
+
+/** Внутри app.use префикс срезан, поэтому у точного совпадения путь равен «/». */
+const onlyExact = middleware => (req, res, next) =>
+  req.path === '/' ? middleware(req, res, next) : next();
 const OPEN_PAGES = new Set(['/login.html', '/favicon.ico']);
 
 function createApp(options = {}) {
@@ -45,10 +49,23 @@ function createApp(options = {}) {
 
   app.use(requestContext(logger));
   app.use(securityHeaders(config));
-  app.use('/api/v1/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
-  app.use('/api/auth/login', rateLimit({ limit: 5, windowMs: 15 * 60_000 }));
+  // app.use монтируется по префиксу, поэтому лимит на /auth/login иначе накрыл
+  // бы и /auth/login/code: пять вводов кода на адрес за 15 минут заперли бы
+  // целый класс за одним NAT. Ограничиваем ровно сам вход.
+  app.use('/api/v1/auth/login', onlyExact(rateLimit({ limit: 5, windowMs: 15 * 60_000 })));
+  app.use('/api/auth/login', onlyExact(rateLimit({ limit: 5, windowMs: 15 * 60_000 })));
   app.use('/api/v1/auth/register', rateLimit({ limit: 20, windowMs: 60 * 60_000 }));
   app.use('/api/auth/register', rateLimit({ limit: 20, windowMs: 60 * 60_000 }));
+  // Ввод кода ограничен и на строке (пять попыток на код), и здесь — иначе
+  // перебор идёт вширь: новый challenge на каждые пять попыток.
+  // Повтор отправки шлёт письмо, поэтому ограничен отдельно и жёстче. Префикс
+  // объявлен раньше общего, чтобы оба лимита сложились.
+  app.use('/api/v1/auth/login/code/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/auth/login/code/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
+  app.use('/api/v1/auth/login/code', rateLimit({ limit: 20, windowMs: 15 * 60_000 }));
+  app.use('/api/auth/login/code', rateLimit({ limit: 20, windowMs: 15 * 60_000 }));
+  app.use('/api/v1/auth/email/verify-code', rateLimit({ limit: 20, windowMs: 15 * 60_000 }));
+  app.use('/api/auth/email/verify-code', rateLimit({ limit: 20, windowMs: 15 * 60_000 }));
   app.use('/api/v1/auth/email/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
   app.use('/api/auth/email/resend', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));
   app.use('/api/v1/auth/password/forgot', rateLimit({ limit: 5, windowMs: 60 * 60_000 }));

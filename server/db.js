@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS account_tokens (
   consumed_at TEXT, requested_ip TEXT);
 CREATE INDEX IF NOT EXISTS idx_account_tokens_lookup ON account_tokens(purpose, token_hash, expires_at);
 
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL, expires_at TEXT NOT NULL, user_agent TEXT);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id, expires_at);
+
 CREATE TABLE IF NOT EXISTS security_events (
   id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   event_type TEXT NOT NULL, occurred_at TEXT NOT NULL, ip TEXT,
@@ -158,6 +165,8 @@ ensureColumn('tasks', 'task_type', "TEXT NOT NULL DEFAULT 'answer'");
 ensureColumn('tasks', 'attachments', "TEXT NOT NULL DEFAULT '[]'");
 db.prepare("UPDATE tasks SET published_at = datetime('now') WHERE published_at IS NULL").run();
 db.prepare("UPDATE tasks SET published_at = replace(published_at, ' ', 'T') || 'Z' WHERE published_at NOT LIKE '%T%'").run();
+ensureColumn('account_tokens', 'code_hash', 'TEXT');
+ensureColumn('account_tokens', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'email_verified_at', 'TEXT');
 db.prepare('UPDATE users SET email_verified_at=created_at WHERE email_verified_at IS NULL').run();
 

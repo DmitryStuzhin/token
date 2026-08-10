@@ -60,15 +60,33 @@ function escapeHtml(value) {
 }
 
 /** Письма читают и в тексте, и в HTML: без text/plain часть фильтров режет рейтинг. */
-function layout({ heading, intro, action, link, footer }) {
-  const text = `${heading}\n\n${intro}\n\n${link}\n\n${footer}\n\nЕсли вы не запрашивали это письмо, просто удалите его.`;
+function layout({ heading, intro, action, link, code, footer }) {
+  const text = [
+    heading,
+    '',
+    intro,
+    ...(code ? ['', `Код: ${code}`] : []),
+    ...(link ? ['', link] : []),
+    '',
+    footer,
+    '',
+    'Если вы не запрашивали это письмо, просто удалите его и никому не сообщайте код.',
+  ].join('\n');
+  // Код набран моноширинным шрифтом с разрядкой: его переписывают руками,
+  // и слипшиеся символы — главный источник ошибок ввода.
+  const codeBlock = code
+    ? `<p style="margin:0 0 24px;padding:16px;border-radius:8px;background:#f2f3f5;text-align:center;font:600 26px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:3px;color:#1c1d22">${escapeHtml(code)}</p>`
+    : '';
+  const linkBlock = link
+    ? `<p style="margin:0 0 24px"><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#1c1d22;color:#fff;text-decoration:none">${escapeHtml(action)}</a></p>
+<p style="margin:0 0 24px;font-size:13px;color:#6b6d76">Если кнопка не открывается, скопируйте ссылку:<br><span style="word-break:break-all">${escapeHtml(link)}</span></p>`
+    : '';
   const html = `<!doctype html><html lang="ru"><body style="margin:0;padding:24px;background:#f5f6f8;font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1c1d22">
 <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px"><tr><td style="padding:32px">
 <h1 style="margin:0 0 16px;font-size:20px">${escapeHtml(heading)}</h1>
 <p style="margin:0 0 24px">${escapeHtml(intro)}</p>
-<p style="margin:0 0 24px"><a href="${escapeHtml(link)}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#1c1d22;color:#fff;text-decoration:none">${escapeHtml(action)}</a></p>
-<p style="margin:0 0 24px;font-size:13px;color:#6b6d76">Если кнопка не открывается, скопируйте ссылку:<br><span style="word-break:break-all">${escapeHtml(link)}</span></p>
-<p style="margin:0;font-size:13px;color:#6b6d76">${escapeHtml(footer)} Если вы не запрашивали это письмо, просто удалите его.</p>
+${codeBlock}${linkBlock}
+<p style="margin:0;font-size:13px;color:#6b6d76">${escapeHtml(footer)} Если вы не запрашивали это письмо, просто удалите его и никому не сообщайте код.</p>
 </td></tr></table></body></html>`;
   return { text, html };
 }
@@ -108,17 +126,33 @@ class EmailDelivery {
     return this.transport !== null;
   }
 
-  async sendVerification(email, link) {
+  async sendVerification(email, link, code) {
     return this.send({
       to: email,
-      subject: 'Подтвердите email в Token',
+      subject: code ? `${code} — код подтверждения Token` : 'Подтвердите email в Token',
       purpose: 'verify_email',
       ...layout({
         heading: 'Подтвердите адрес',
-        intro: 'Остался один шаг: подтвердите email, чтобы войти в Token.',
+        intro: 'Введите код на странице регистрации или откройте ссылку — подойдёт любое.',
         action: 'Подтвердить email',
         link,
-        footer: 'Ссылка действует 24 часа.',
+        code,
+        footer: 'Код и ссылка действуют 24 часа.',
+      }),
+    });
+  }
+  async sendLoginCode(email, code, context = {}) {
+    return this.send({
+      to: email,
+      subject: `${code} — код для входа в Token`,
+      purpose: 'login_code',
+      ...layout({
+        heading: 'Код для входа',
+        intro: context.userAgent
+          ? `Вход в Token с устройства: ${String(context.userAgent).slice(0, 120)}`
+          : 'Введите код на странице входа в Token.',
+        code,
+        footer: 'Код действует 10 минут и подходит только для одного входа.',
       }),
     });
   }

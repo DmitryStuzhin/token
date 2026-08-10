@@ -16,8 +16,14 @@ async function register(request, user, prefix) {
   const registration = await response.json();
   const verification = new URL(registration.verificationUrl);
   expect((await request.get(verification.pathname + verification.search)).ok()).toBeTruthy();
-  expect((await request.post('/api/v1/auth/login', {
+  const started = await request.post('/api/v1/auth/login', {
     data:{ email:data.email, password:data.password },
+    headers:{ 'X-Forwarded-For':forwardedFor },
+  });
+  expect(started.ok()).toBeTruthy();
+  const challenge = await started.json();
+  expect((await request.post('/api/v1/auth/login/code', {
+    data:{ challenge:challenge.challenge, code:challenge.code },
     headers:{ 'X-Forwarded-For':forwardedFor },
   })).ok()).toBeTruthy();
 }

@@ -60,6 +60,57 @@ paths:
         '200': { $ref: '#/components/responses/CommandSuccess' }
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
+  /auth/login/code:
+    post:
+      security: []
+      tags: [Identity]
+      operationId: completeLoginWithCode
+      description: >-
+        Второй шаг входа. Challenge выдаётся за верный пароль, код доказывает
+        владение почтой. Успех запоминает устройство на 30 дней.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginCodeRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /auth/login/code/resend:
+    post:
+      security: []
+      tags: [Identity]
+      operationId: resendLoginCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge]
+              properties:
+                challenge: { type: string, minLength: 20, maxLength: 500 }
+              additionalProperties: false
+      responses:
+        '202': { $ref: '#/components/responses/CommandSuccess' }
+        '400': { $ref: '#/components/responses/Problem' }
+  /auth/email/verify-code:
+    post:
+      security: []
+      tags: [Identity]
+      operationId: verifyEmailWithCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, minLength: 9, maxLength: 40 }
+              additionalProperties: false
+      responses:
+        '200': { $ref: '#/components/responses/CommandSuccess' }
+        '400': { $ref: '#/components/responses/Problem' }
   /auth/email/resend:
     post:
       security: []
@@ -364,6 +415,17 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string, minLength: 1, maxLength: 200 }
+    LoginCodeRequest:
+      type: object
+      required: [challenge, code]
+      properties:
+        challenge: { type: string, minLength: 20, maxLength: 500 }
+        code:
+          type: string
+          minLength: 9
+          maxLength: 40
+          description: Код из письма. Регистр и разделители произвольны.
+          example: K7M-2PQ-9XZ
     EmailRequest:
       type: object
       required: [email]

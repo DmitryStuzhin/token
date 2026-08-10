@@ -103,9 +103,15 @@ test('new passwords use Argon2id and legacy scrypt upgrades after login', async 
   const store = {
     async findUserByEmail() { return user; },
     async updatePassword(id, credentials) { upgraded = { id, ...credentials }; },
+    async replaceAccountToken() {},
+    async touchTrustedDevice() { return null; },
   };
   const service = new AuthService(store, { tutor:{ enabled:true, label:'Репетитор' } });
-  assert.equal((await service.login('legacy@example.test', 'test-password')).user, user);
+  // Верный пароль больше не отдаёт сессию сразу: дальше идёт код из письма.
+  // Апгрейд хеша при этом обязан произойти уже на первом шаге.
+  const started = await service.login('legacy@example.test', 'test-password');
+  assert.equal(started.codeRequired, true);
+  assert.equal(started.error, undefined);
   assert.equal(upgraded.id, user.id);
   assert.match(upgraded.hash, /^\$argon2id\$/);
 });

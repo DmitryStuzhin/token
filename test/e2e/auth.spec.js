@@ -1,19 +1,32 @@
 const { test, expect } = require('@playwright/test');
 const { fixture, withUniqueEmail } = require('../fixtures/scenario.js');
 
+/** Ответ тестового окружения содержит код письма — читаем его из сети. */
+function captureJson(page, path) {
+  return page.waitForResponse(response =>
+    response.url().includes(path) && response.request().method() === 'POST');
+}
+
 async function submitVerifyAndLogin(page, user) {
-  const responsePromise = page.waitForResponse(response =>
-    response.url().includes('/api/v1/auth/register') && response.request().method() === 'POST');
+  const registrationResponse = captureJson(page, '/api/v1/auth/register');
   await page.getByRole('button', { name: 'Создать аккаунт' }).click();
-  const registration = await (await responsePromise).json();
-  await expect(page.locator('#out')).toContainText('Письмо отправлено');
-  const verification = new URL(registration.verificationUrl);
-  const verified = await page.context().request.get(verification.pathname + verification.search);
-  expect(verified.ok()).toBeTruthy();
-  await page.goto('/login.html?mode=signin&verified=1');
+  const registration = await (await registrationResponse).json();
+
+  // Регистрация приводит на шаг ввода кода, а не на «проверьте почту».
+  await expect(page.getByRole('heading', { name: 'Подтвердите email' })).toBeVisible();
+  await page.locator('#f-code').fill(registration.code);
+  await page.getByRole('button', { name: 'Продолжить' }).click();
+  await expect(page.locator('#out')).toContainText('Email подтверждён');
+
   await page.locator('#f-email').fill(user.email);
   await page.locator('#f-pass').fill(user.password);
+  const loginResponse = captureJson(page, '/api/v1/auth/login');
   await page.getByRole('button', { name: 'Войти' }).click();
+  const login = await (await loginResponse).json();
+
+  await expect(page.getByRole('heading', { name: 'Код для входа' })).toBeVisible();
+  await page.locator('#f-code').fill(login.code);
+  await page.getByRole('button', { name: 'Продолжить' }).click();
 }
 
 test('guest is redirected to login and can register as tutor', async ({ page }) => {

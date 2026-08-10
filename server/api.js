@@ -59,7 +59,9 @@ router.get('/state.js', asyncRoute(async (req, res) => {
 /* ── аутентификация ──────────────────────────────────────────────── */
 router.get('/auth/roles', (req, res) => res.json(A.ROLES));
 
-const authContext = req => ({ ip:req.ip, userAgent:req.headers['user-agent'] });
+const authContext = req => ({
+  ip:req.ip, userAgent:req.headers['user-agent'], deviceToken:req.deviceToken,
+});
 
 router.post('/auth/register', asyncRoute(async (req, res) => {
   const r = await req.app.locals.auth.register(req.body || {}, authContext(req));
@@ -71,23 +73,60 @@ router.post('/auth/register', asyncRoute(async (req, res) => {
   }));
   res.status(201).json({
     ok:true, verificationRequired:true, email:r.user.email, emailSent:r.delivered !== false,
-    ...(r.link ? { verificationUrl:r.link } : {}),
+    ...(r.link ? { verificationUrl:r.link } : {}), ...(r.code ? { code:r.code } : {}),
   });
 }));
+
+async function grantSession(req, res, user) {
+  const s = await req.app.locals.auth.createSession(user.id, req.headers['user-agent']);
+  A.setCookie(res, s.token, s.expires);
+  return { ok:true, role:user.role, home:A.ROLES[user.role].home };
+}
 
 router.post('/auth/login', asyncRoute(async (req, res) => {
   const { email, password } = req.body || {};
   const r = await req.app.locals.auth.login(email, password, authContext(req));
   if (r.error) return res.status(r.code === 'EMAIL_UNVERIFIED' ? 403 : 401)
     .json({ error:r.error, code:r.code });
-  const s = await req.app.locals.auth.createSession(r.user.id, req.headers['user-agent']);
-  A.setCookie(res, s.token, s.expires);
-  res.json({ ok:true, role:r.user.role, home:A.ROLES[r.user.role].home });
+  if (r.codeRequired) {
+    return res.status(202).json({
+      ok:true, codeRequired:true, challenge:r.challenge, emailHint:r.emailHint,
+      emailSent:r.delivered !== false, ...(r.code ? { code:r.code } : {}),
+    });
+  }
+  res.json(await grantSession(req, res, r.user));
+}));
+
+router.post('/auth/login/code', asyncRoute(async (req, res) => {
+  const { challenge, code } = req.body || {};
+  const r = await req.app.locals.auth.completeLogin(challenge, code, authContext(req));
+  if (r.error) return res.status(400).json({ error:r.error, attemptsLeft:r.attemptsLeft });
+  A.setDeviceCookie(res, r.deviceToken, r.deviceExpires);
+  res.json(await grantSession(req, res, r.user));
+}));
+
+router.post('/auth/login/code/resend', asyncRoute(async (req, res) => {
+  const r = await req.app.locals.auth.resendLoginCode(req.body?.challenge, authContext(req));
+  if (r.error) return res.status(400).json({ error:r.error });
+  res.status(202).json({
+    ok:true, challenge:r.challenge, emailSent:r.delivered !== false,
+    ...(r.code ? { code:r.code } : {}),
+  });
+}));
+
+router.post('/auth/email/verify-code', asyncRoute(async (req, res) => {
+  const { email, code } = req.body || {};
+  const r = await req.app.locals.auth.verifyEmailCode(email, code, authContext(req));
+  if (r.error) return res.status(400).json({ error:r.error, attemptsLeft:r.attemptsLeft });
+  res.json({ ok:true });
 }));
 
 router.post('/auth/email/resend', asyncRoute(async (req, res) => {
   const result = await req.app.locals.auth.resendVerification(req.body?.email, authContext(req));
-  res.status(202).json({ ok:true, ...(result.link ? { verificationUrl:result.link } : {}) });
+  res.status(202).json({
+    ok:true, ...(result.link ? { verificationUrl:result.link } : {}),
+    ...(result.code ? { code:result.code } : {}),
+  });
 }));
 
 router.get('/auth/email/verify', asyncRoute(async (req, res) => {

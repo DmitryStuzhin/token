@@ -64,6 +64,9 @@ const listQuerySchema = z.object({
 const bodySchemas = [
   [/^\/auth\/register$/, z.object({ name:z.string().min(2).max(200), email:z.email(), password:z.string().min(10).max(200), role:z.enum(['student','tutor']), phone:z.string().max(50).optional(), tz:z.string().max(100).optional(), grade:z.coerce.number().int().min(1).max(11).optional(), school:z.string().max(300).optional(), subjects:z.array(z.string()).max(20).optional(), yearsExp:z.coerce.number().min(0).max(80).optional(), rate:z.coerce.number().min(0).optional(), meetingUrl:z.string().max(2000).optional() })],
   [/^\/auth\/login$/, z.object({ email:z.email(), password:z.string().min(1).max(200) })],
+  [/^\/auth\/login\/code$/, z.object({ challenge:z.string().min(20).max(500), code:z.string().min(9).max(40) })],
+  [/^\/auth\/login\/code\/resend$/, z.object({ challenge:z.string().min(20).max(500) })],
+  [/^\/auth\/email\/verify-code$/, z.object({ email:z.email(), code:z.string().min(9).max(40) })],
   [/^\/auth\/email\/resend$/, z.object({ email:z.email() })],
   [/^\/auth\/password\/forgot$/, z.object({ email:z.email() })],
   [/^\/auth\/password\/reset$/, z.object({ token:z.string().min(20).max(500), password:z.string().min(10).max(200) })],
@@ -107,6 +110,7 @@ function withProblemDetails(req, res, next) {
         {
           ...(body.errors ? { errors:body.errors } : {}),
           ...(body.code ? { code:body.code } : {}),
+          ...(body.attemptsLeft ? { attemptsLeft:body.attemptsLeft } : {}),
         }));
     }
     return json(body);

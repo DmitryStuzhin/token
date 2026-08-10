@@ -105,10 +105,68 @@ class PostgresIdentityStore {
     );
     await this.pool.query(
       `INSERT INTO account_tokens
-       (token_hash,user_id,purpose,created_at,expires_at,requested_ip)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [input.tokenHash, userId, input.purpose, input.createdAt, input.expiresAt, input.ip],
+       (token_hash,user_id,purpose,created_at,expires_at,requested_ip,code_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        input.tokenHash,
+        userId,
+        input.purpose,
+        input.createdAt,
+        input.expiresAt,
+        input.ip,
+        input.codeHash || null,
+      ],
     );
+  }
+  async findAccountToken(criteria, now) {
+    const byHandle = Boolean(criteria.tokenHash);
+    const key = byHandle ? criteria.tokenHash : await this.internalUserId(criteria.userId);
+    const result = await this.pool.query(
+      `SELECT token_hash,user_id::text,code_hash,attempts,expires_at FROM account_tokens
+       WHERE ${byHandle ? 'token_hash=$1' : 'user_id=$1'} AND purpose=$2
+       AND consumed_at IS NULL AND expires_at > $3`,
+      [key, criteria.purpose, now],
+    );
+    return result.rows[0] || null;
+  }
+  async countAccountTokenAttempt(tokenHash) {
+    const result = await this.pool.query(
+      'UPDATE account_tokens SET attempts=attempts+1 WHERE token_hash=$1 RETURNING attempts',
+      [tokenHash],
+    );
+    return result.rows[0]?.attempts ?? 0;
+  }
+  async deleteAccountToken(tokenHash) {
+    await this.pool.query('DELETE FROM account_tokens WHERE token_hash=$1', [tokenHash]);
+  }
+  async createTrustedDevice(device) {
+    const userId = await this.internalUserId(device.userId);
+    await this.pool.query(
+      `INSERT INTO trusted_devices
+       (id,user_id,token_hash,created_at,last_seen_at,expires_at,user_agent)
+       VALUES ($1,$2,$3,$4,$4,$5,$6)`,
+      [
+        device.id,
+        userId,
+        device.tokenHash,
+        device.createdAt,
+        device.expiresAt,
+        device.userAgent,
+      ],
+    );
+  }
+  async touchTrustedDevice(userId, tokenHash, now) {
+    const internalId = await this.internalUserId(userId);
+    const result = await this.pool.query(
+      `UPDATE trusted_devices SET last_seen_at=$3
+       WHERE user_id=$1 AND token_hash=$2 AND expires_at > $3 RETURNING id::text`,
+      [internalId, tokenHash, now],
+    );
+    return result.rows[0]?.id || null;
+  }
+  async deleteTrustedDevicesForUser(userId) {
+    const internalId = await this.internalUserId(userId);
+    await this.pool.query('DELETE FROM trusted_devices WHERE user_id=$1', [internalId]);
   }
   async consumeAccountToken(tokenHash, purpose, consumedAt) {
     const result = await this.pool.query(

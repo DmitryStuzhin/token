@@ -98,9 +98,14 @@ void test('public HTTP learning flow runs on the PostgreSQL adapter', async () =
       assert.equal(registration.status, 201, registration.text);
       const verification = new URL(String(registration.body.verificationUrl));
       assert.equal((await agent.get(verification.pathname + verification.search)).status, 302);
-      const login = await agent.post('/api/auth/login').send({
+      const started = await agent.post('/api/auth/login').send({
         email: data.email,
         password: data.password,
+      });
+      assert.equal(started.status, 202, started.text);
+      const login = await agent.post('/api/auth/login/code').send({
+        challenge: started.body.challenge,
+        code: started.body.code,
       });
       assert.equal(login.status, 200, login.text);
     };

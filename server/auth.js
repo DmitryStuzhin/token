@@ -3,6 +3,7 @@ const { loadConfig } = require('./config.js');
 const { AuthService, hashPassword, verifyPassword } = require('../modules/identity/application/auth-service.js');
 
 const COOKIE = 'token_sid';
+const DEVICE_COOKIE = 'token_device';
 const ROLES = {
   student: { label: 'Ученик', home: '/index.html', enabled: true },
   tutor: { label: 'Репетитор', home: '/tutor.html', enabled: true },
@@ -25,10 +26,15 @@ function createAuthService(config, pool, email, logger) {
   return new AuthService(new SqliteIdentityStore(), ROLES, options);
 }
 
-function attach(req, res, next) {
+function readCookie(req, name) {
   const raw = req.headers.cookie || '';
-  const cookie = raw.split(';').map(value => value.trim()).find(value => value.startsWith(`${COOKIE}=`));
-  req.sessionToken = cookie ? decodeURIComponent(cookie.slice(COOKIE.length + 1)) : null;
+  const cookie = raw.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`));
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null;
+}
+
+function attach(req, res, next) {
+  req.sessionToken = readCookie(req, COOKIE);
+  req.deviceToken = readCookie(req, DEVICE_COOKIE);
   Promise.resolve(req.app.locals.auth.userBySession(req.sessionToken))
     .then(async user => {
       req.user = user;
@@ -53,6 +59,21 @@ function setCookie(res, token, expires) {
     secure: config.cookieSecure,
   });
 }
+/**
+ * Куки доверенного устройства. SameSite=strict, потому что она нужна только
+ * на собственной форме входа: пускать её в кросс-сайтовые переходы значило бы
+ * дарить второй фактор любому стороннему сайту, который откроет наш логин.
+ */
+function setDeviceCookie(res, token, expires) {
+  const config = res.app?.locals?.config || loadConfig();
+  res.cookie(DEVICE_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    path: '/',
+    expires,
+    secure: config.cookieSecure,
+  });
+}
 const clearCookie = res => res.clearCookie(COOKIE, { path: '/' });
 const requireUser = (req, res, next) =>
   req.user ? next() : res.status(401).json({ error: 'Нужно войти' });
@@ -67,10 +88,12 @@ const requireRole = role => (req, res, next) => {
 module.exports = {
   ROLES,
   COOKIE,
+  DEVICE_COOKIE,
   uid,
   createAuthService,
   attach,
   setCookie,
+  setDeviceCookie,
   clearCookie,
   requireUser,
   requireRole,
