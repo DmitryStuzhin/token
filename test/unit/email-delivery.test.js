@@ -14,6 +14,12 @@ function withTransport(transport, options = {}) {
   return delivery;
 }
 
+function sleep(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function smtpError(code, responseCode) {
   const error = new Error(`SMTP ${code}`);
   error.code = code;
@@ -70,6 +76,39 @@ test('a hanging SMTP handshake fails fast instead of blocking the probe', async 
   const started = Date.now();
   await assert.rejects(() => delivery.verify(), /превышено ожидание/);
   assert.ok(Date.now() - started < 2_000);
+});
+
+test('a rejected login is cached, so readiness cannot flood the provider with AUTH', async () => {
+  let attempts = 0;
+  const rejecting = withTransport({
+    async verify() {
+      attempts += 1;
+      const error = new Error('Invalid login: 535 Incorrect authentication data');
+      error.responseCode = 535;
+      throw error;
+    },
+    async sendMail() {
+      return { messageId:'<recovered@token>' };
+    },
+  });
+
+  // Readiness-проба ходит раз в несколько секунд: за это окно провайдер должен
+  // увидеть ровно одну попытку, иначе он заблокирует адрес по потоку 535.
+  for (let probe = 0; probe < 10; probe += 1) {
+    await assert.rejects(() => rejecting.verify(), /535/);
+  }
+  assert.equal(attempts, 1);
+
+  // Удачная отправка сильнее закешированного отказа.
+  await rejecting.sendPasswordReset('a@b.test', 'https://tokenapp.ru/reset');
+  assert.deepEqual(await rejecting.verify(), { cached:true });
+  assert.equal(attempts, 1);
+
+  const expiring = withTransport({ async verify() { attempts += 1; } }, { checkCacheMs:1 });
+  await expiring.verify();
+  await sleep(5);
+  await expiring.verify();
+  assert.equal(attempts, 3, 'по истечении окна проверка повторяется');
 });
 
 test('without SMTP configured non-production delivery is a no-op', async () => {

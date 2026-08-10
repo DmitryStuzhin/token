@@ -10,6 +10,7 @@ const CONNECTION_TIMEOUT_MS = 10_000;
 const GREETING_TIMEOUT_MS = 10_000;
 const SOCKET_TIMEOUT_MS = 20_000;
 const VERIFY_TIMEOUT_MS = 12_000;
+const CHECK_CACHE_MS = 60_000;
 const SEND_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 400;
 
@@ -77,7 +78,10 @@ class EmailDelivery {
     this.config = config;
     this.logger = logger || { info() {}, warn() {}, error() {} };
     this.verifyTimeoutMs = options.verifyTimeoutMs || VERIFY_TIMEOUT_MS;
+    this.checkCacheMs = options.checkCacheMs || CHECK_CACHE_MS;
     this.verifiedAt = null;
+    this.checkedAt = null;
+    this.lastError = null;
     this.transport = config.smtpHost
       ? nodemailer.createTransport({
           host: config.smtpHost,
@@ -154,7 +158,11 @@ class EmailDelivery {
       const startedAt = Date.now();
       try {
         const info = await this.transport.sendMail(message);
+        // Успешная отправка — более сильное доказательство работоспособности,
+        // чем verify(): гасим закешированный отказ, чтобы readiness не врал.
         this.verifiedAt = Date.now();
+        this.checkedAt = this.verifiedAt;
+        this.lastError = null;
         this.logger.info('email_sent', {
           purpose,
           attempt,
@@ -183,20 +191,30 @@ class EmailDelivery {
   }
 
   /**
-   * Рукопожатие с SMTP. Результат кешируется на минуту: readiness-проба ходит
-   * часто, а полноценный коннект на каждый её вызов провайдер считает флудом.
+   * Рукопожатие с SMTP. Кешируется и успех, и отказ: readiness-проба ходит раз
+   * в несколько секунд, а полноценный коннект на каждый её вызов провайдер
+   * считает флудом. Неудачу кешировать особенно важно — поток неверных AUTH
+   * с одного адреса почтовые хостинги блокируют по IP, и тогда починка пароля
+   * уже ничего не даст.
    */
   async verify() {
     if (!this.transport) {
       if (this.config.nodeEnv === 'production') throw new Error('Почтовая доставка не настроена');
       return { skipped: true };
     }
-    if (this.verifiedAt && Date.now() - this.verifiedAt < 60_000) return { cached: true };
+    if (this.checkedAt && Date.now() - this.checkedAt < this.checkCacheMs) {
+      if (this.lastError) throw this.lastError;
+      return { cached: true };
+    }
     try {
       await withTimeout(this.transport.verify(), this.verifyTimeoutMs, 'SMTP verify');
-      this.verifiedAt = Date.now();
+      this.checkedAt = Date.now();
+      this.lastError = null;
+      this.verifiedAt = this.checkedAt;
       return { ok: true };
     } catch (error) {
+      this.checkedAt = Date.now();
+      this.lastError = error;
       this.verifiedAt = null;
       throw error;
     }
