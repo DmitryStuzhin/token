@@ -116,6 +116,41 @@ test('new passwords use Argon2id and legacy scrypt upgrades after login', async 
   assert.match(upgraded.hash, /^\$argon2id\$/);
 });
 
+test('privileged roles always require MFA and never trust the browser', async () => {
+  const credentials = await hashPassword('test-password');
+  const user = {
+    id:'admin-user', role:'admin', email:'admin@example.test', email_verified_at:new Date().toISOString(),
+    pass_hash:credentials.hash, pass_salt:credentials.salt,
+  };
+  let touchedTrustedDevice = false;
+  let createdTrustedDevice = false;
+  let tokenRow = null;
+  const store = {
+    async findUserByEmail() { return user; },
+    async findUserById() { return user; },
+    async touchTrustedDevice() { touchedTrustedDevice = true; return 'trusted'; },
+    async replaceAccountToken(input) {
+      tokenRow = { token_hash:input.tokenHash, user_id:user.id, code_hash:input.codeHash, attempts:0 };
+    },
+    async findAccountToken() { return tokenRow; },
+    async consumeAccountToken() { return user.id; },
+    async createTrustedDevice() { createdTrustedDevice = true; },
+    async recordSecurityEvent() {},
+  };
+  const service = new AuthService(store, { admin:{ enabled:true, label:'Администратор' } }, {
+    exposeTokens:true,
+    privilegedRoles:['admin'],
+  });
+  const started = await service.login(user.email, 'test-password', { deviceToken:'known-browser' });
+  assert.equal(started.codeRequired, true);
+  assert.equal(started.privilegedMfa, true);
+  assert.equal(touchedTrustedDevice, false);
+  const completed = await service.completeLogin(started.challenge, started.code);
+  assert.equal(completed.user.id, user.id);
+  assert.equal(completed.deviceToken, undefined);
+  assert.equal(createdTrustedDevice, false);
+});
+
 test('structured logger redacts secrets and personal fields', () => {
   const rows = [];
   const logger = createLogger('info', { log:value => rows.push(value), warn() {}, error() {} });

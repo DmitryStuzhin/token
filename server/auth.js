@@ -8,6 +8,7 @@ const ROLES = {
   student: { label: 'Ученик', home: '/index.html', enabled: true },
   tutor: { label: 'Репетитор', home: '/tutor.html', enabled: true },
   parent: { label: 'Родитель', home: '/parent.html', enabled: false },
+  admin: { label: 'Администратор', home: '/admin.html', enabled: false },
 };
 const uid = () => uuidv7();
 
@@ -17,6 +18,7 @@ function createAuthService(config, pool, email, logger) {
     logger,
     publicOrigin:config.publicOrigin || `http://localhost:${config.port}`,
     exposeTokens:config.nodeEnv === 'test',
+    privilegedRoles:['admin'],
   };
   if (config.databaseDriver === 'postgres') {
     const { PostgresIdentityStore } = require('../modules/identity/infrastructure/postgres-identity-store.js');
