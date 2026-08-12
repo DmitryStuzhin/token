@@ -73,6 +73,7 @@ window.Api = (function () {
     createLesson: data => post('/lessons', data),
     addLink: (lessonId, link) => post('/lessons/' + lessonId + '/links', link),
     removeLink: (lessonId, i) => del('/lessons/' + lessonId + '/links/' + i),
+    saveLessonNote: (lessonId, note) => call('PUT', '/lessons/' + lessonId + '/note', note),
     attachTask: (lessonId, taskId) => post('/lessons/' + lessonId + '/tasks', { taskId }),
     detachTask: (lessonId, taskId) => del('/lessons/' + lessonId + '/tasks/' + encodeURIComponent(taskId)),
     setLessonStatus: (lessonId, status) => post('/lessons/' + lessonId + '/status', { status }),

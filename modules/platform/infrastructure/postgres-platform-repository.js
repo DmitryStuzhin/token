@@ -68,6 +68,7 @@ class PostgresPlatformRepository {
       'lessons',
       'lesson_links',
       'lesson_tasks',
+      'lesson_notes',
       'lesson_attendance',
       'assignments',
       'assignment_tasks',
@@ -106,6 +107,17 @@ class PostgresPlatformRepository {
       const list = lessonTasks.get(key) || [];
       list.push({ id: taskIds.get(String(row.task_id)), position: row.position });
       lessonTasks.set(key, list);
+    }
+    const lessonNotes = new Map();
+    for (const row of [...data.lesson_notes].sort(
+      (a, b) => new Date(a.updated_at) - new Date(b.updated_at),
+    )) {
+      lessonNotes.set(String(row.lesson_id), {
+        text: row.body,
+        visibility: row.visibility,
+        authorUserId: userIds.get(String(row.author_user_id)),
+        updatedAt: row.updated_at,
+      });
     }
     const assignmentTasks = new Map();
     for (const row of data.assignment_tasks) {
@@ -279,7 +291,7 @@ class PostgresPlatformRepository {
         taskIds: (lessonTasks.get(String(row.id)) || [])
           .sort((a, b) => a.position - b.position)
           .map((item) => item.id),
-        note: null,
+        note: lessonNotes.get(String(row.id)) || null,
         version: row.version,
       })),
       lessonAttendance: data.lesson_attendance.map((row) => ({
@@ -435,9 +447,13 @@ class PostgresPlatformRepository {
       base.invites = state.invites.filter((item) => tutorIds.has(item.tutorId));
     const enrollmentSet = new Set(base.enrollments.map((item) => item.id));
     const groupSet = new Set(base.groups.map((item) => item.id));
-    base.lessons = state.lessons.filter(
-      (item) => enrollmentSet.has(item.enrollmentId) || groupSet.has(item.groupId),
-    );
+    base.lessons = state.lessons
+      .filter((item) => enrollmentSet.has(item.enrollmentId) || groupSet.has(item.groupId))
+      .map((item) =>
+        user.role === 'student' && item.note?.visibility === 'private'
+          ? { ...item, note: null }
+          : item,
+      );
     base.assignments = state.assignments.filter(
       (item) => enrollmentSet.has(item.enrollmentId) || groupSet.has(item.groupId),
     );
@@ -715,6 +731,28 @@ class PostgresPlatformRepository {
       ]);
     }
     return result;
+  }
+  async updateLessonNote(lesson, note) {
+    const lessonId = await this.resolve('lessons', lesson.id);
+    const authorUserId = await this.resolve('users', note.authorUserId);
+    const current = await this.query(
+      `UPDATE lessons SET version=version+1,updated_at=now()
+       WHERE id=$1 AND version=$2`,
+      [lessonId, lesson.version],
+    );
+    if (current.rowCount !== 1) return current;
+    await this.query('DELETE FROM lesson_notes WHERE lesson_id=$1 AND author_user_id=$2', [
+      lessonId,
+      authorUserId,
+    ]);
+    if (note.text) {
+      await this.query(
+        `INSERT INTO lesson_notes (id,lesson_id,author_user_id,visibility,body)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [uuidv7(), lessonId, authorUserId, note.visibility, note.text],
+      );
+    }
+    return current;
   }
   async removeIssuedAttempt(lessonId, taskId) {
     await this.query(`DELETE FROM attempts WHERE lesson_id=$1 AND task_id=$2 AND status='issued'`, [
