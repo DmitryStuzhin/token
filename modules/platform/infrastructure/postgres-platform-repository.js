@@ -580,6 +580,177 @@ class PostgresPlatformRepository {
       [input.id, tutorId, subjectId, input.title, input.level, input.schedule, input.capacity],
     );
   }
+  async updateProfile(userId, role, input) {
+    const id = await this.resolve('users', userId);
+    await this.query(
+      'UPDATE users SET name=$1,phone=$2,tz=$3,updated_at=now(),version=version+1 WHERE id=$4',
+      [input.name, input.phone, input.tz, id],
+    );
+    if (role === 'student')
+      await this.query(
+        'UPDATE student_profiles SET grade=$1,school=$2,updated_at=now(),version=version+1 WHERE user_id=$3',
+        [input.grade, input.school, id],
+      );
+    else
+      await this.query(
+        'UPDATE tutor_profiles SET years_exp=$1,rate_minor=$2,meeting_url=$3,updated_at=now(),version=version+1 WHERE user_id=$4',
+        [input.yearsExp, Math.round(input.rate * 100), input.meetingUrl, id],
+      );
+  }
+  async updateEnrollment(enrollment, status, reason, actor) {
+    const id = await this.resolve('enrollments', enrollment.id);
+    const actorId = await this.resolve('users', actor);
+    await this.transaction(async () => {
+      await this.query(
+        "UPDATE enrollments SET status=$1,status_reason=$2,ended_at=CASE WHEN $1='closed' THEN CURRENT_DATE ELSE NULL END,updated_at=now(),version=version+1 WHERE id=$3",
+        [status, reason, id],
+      );
+      await this.query(
+        'INSERT INTO enrollment_history(id,enrollment_id,from_status,to_status,reason,changed_by) VALUES($1,$2,$3,$4,$5,$6)',
+        [uuidv7(), id, enrollment.status, status, reason, actorId],
+      );
+    });
+  }
+  async updateGroup(group, input) {
+    return this.query(
+      'UPDATE groups SET title=$1,level=$2,schedule=$3,capacity=$4,status=$5,updated_at=now(),version=version+1 WHERE id=$6',
+      [
+        input.title,
+        input.level,
+        input.schedule,
+        input.capacity,
+        input.status,
+        await this.resolve('groups', group.id),
+      ],
+    );
+  }
+  async updateGroupMember(groupId, studentId, status, policy) {
+    return this.query(
+      'UPDATE group_members SET status=$1,old_assignments_policy=$2,updated_at=now(),version=version+1 WHERE group_id=$3 AND student_id=$4',
+      [
+        status,
+        policy,
+        await this.resolve('groups', groupId),
+        await this.resolve('student_profiles', studentId),
+      ],
+    );
+  }
+  async lessonConflicts(tutorId, startsAt, durationMin, studentIds, exceptId = null) {
+    const tutor = await this.resolve('tutor_profiles', tutorId);
+    const except = await this.resolve('lessons', exceptId);
+    const end = new Date(new Date(startsAt).getTime() + durationMin * 60000).toISOString();
+    const tr = await this.query(
+      "SELECT id FROM lessons WHERE tutor_id=$1 AND id IS DISTINCT FROM $2::uuid AND status='planned' AND starts_at<$3 AND starts_at+(duration_min||' minutes')::interval>$4 LIMIT 1",
+      [tutor, except, end, startsAt],
+    );
+    if (tr.rowCount) return tr.rows[0];
+    for (const sid of studentIds) {
+      const s = await this.resolve('student_profiles', sid);
+      const hit = await this.query(
+        "SELECT l.id FROM lessons l LEFT JOIN enrollments e ON e.id=l.enrollment_id LEFT JOIN group_members gm ON gm.group_id=l.group_id AND gm.status='active' WHERE l.id IS DISTINCT FROM $1::uuid AND l.status='planned' AND (e.student_id=$2 OR gm.student_id=$2) AND l.starts_at<$3 AND l.starts_at+(l.duration_min||' minutes')::interval>$4 LIMIT 1",
+        [except, s, end, startsAt],
+      );
+      if (hit.rowCount) return hit.rows[0];
+    }
+    return null;
+  }
+  async updateLessonSchedule(lesson, input) {
+    return this.query(
+      'UPDATE lessons SET starts_at=$1,duration_min=$2,status=$3,status_reason=$4,original_starts_at=COALESCE(original_starts_at,starts_at),updated_at=now(),version=version+1 WHERE id=$5 AND version=$6',
+      [
+        input.startsAt,
+        input.durationMin,
+        input.status,
+        input.reason,
+        await this.resolve('lessons', lesson.id),
+        lesson.version,
+      ],
+    );
+  }
+  async setAttendance(lessonId, studentId, status) {
+    return this.query(
+      'INSERT INTO lesson_attendance(lesson_id,student_id,status) VALUES($1,$2,$3) ON CONFLICT(lesson_id,student_id) DO UPDATE SET status=excluded.status,updated_at=now(),version=lesson_attendance.version+1',
+      [
+        await this.resolve('lessons', lessonId),
+        await this.resolve('student_profiles', studentId),
+        status,
+      ],
+    );
+  }
+  async findAssignment(id) {
+    const state = await this.fullState();
+    const a = state.assignments.find((x) => x.id === id);
+    return a ? { ...a, enrollment_id: a.enrollmentId, group_id: a.groupId } : null;
+  }
+  async updateAssignment(a, input) {
+    return this.query(
+      'UPDATE assignments SET title=$1,opens_at=$2,due_at=$3,late_policy=$4,status=$5,updated_at=now(),version=version+1 WHERE id=$6 AND version=$7',
+      [
+        input.title,
+        input.opensAt,
+        input.dueAt,
+        input.latePolicy,
+        input.status,
+        await this.resolve('assignments', a.id),
+        a.version,
+      ],
+    );
+  }
+  async returnAttempt(attempt, input) {
+    return this.updateAttemptWithHistory(
+      attempt,
+      {
+        status: 'returned',
+        rubric: JSON.stringify(input.rubric || []),
+        rubric_scores: JSON.stringify(input.rubricScores || {}),
+      },
+      await this.resolve('users', input.actorUserId),
+    );
+  }
+  async saveGoal(input) {
+    return this.query(
+      'INSERT INTO goals(student_id,subject_id,target_score,exam_date) VALUES($1,$2,$3,$4) ON CONFLICT(student_id,subject_id) DO UPDATE SET target_score=excluded.target_score,exam_date=excluded.exam_date,updated_at=now(),version=goals.version+1',
+      [
+        await this.resolve('student_profiles', input.studentId),
+        await this.resolve('subjects', input.subjectId, 'code'),
+        input.targetScore,
+        input.examDate,
+      ],
+    );
+  }
+  async createMockExam(input) {
+    return this.query(
+      'INSERT INTO mock_exams(id,student_id,subject_id,variant,taken_at,items,scale_version) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)',
+      [
+        input.id,
+        await this.resolve('student_profiles', input.studentId),
+        await this.resolve('subjects', input.subjectId, 'code'),
+        input.variant,
+        input.date,
+        JSON.stringify(input.items),
+        input.scaleVersion,
+      ],
+    );
+  }
+  async findMockExam(id) {
+    const state = await this.fullState();
+    return state.mockExams.find((x) => x.id === id) || null;
+  }
+  async updateMockExam(input) {
+    return this.query(
+      'UPDATE mock_exams SET variant=$1,taken_at=$2,items=$3::jsonb,scale_version=$4,updated_at=now(),version=version+1 WHERE id=$5',
+      [
+        input.variant,
+        input.date,
+        JSON.stringify(input.items),
+        input.scaleVersion,
+        await this.resolve('mock_exams', input.id),
+      ],
+    );
+  }
+  async deleteMockExam(id) {
+    return this.query('DELETE FROM mock_exams WHERE id=$1', [await this.resolve('mock_exams', id)]);
+  }
 
   async inviteCodeExists(code) {
     return (await this.query('SELECT 1 FROM invites WHERE code=$1', [code])).rowCount > 0;
@@ -682,8 +853,8 @@ class PostgresPlatformRepository {
   }
   async createLesson(input) {
     await this.query(
-      `INSERT INTO lessons (id,subject_id,tutor_id,enrollment_id,group_id,starts_at,duration_min,status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'planned')`,
+      `INSERT INTO lessons (id,subject_id,tutor_id,enrollment_id,group_id,starts_at,duration_min,status,recurrence_id,recurrence_rule)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'planned',$8,$9::jsonb)`,
       [
         input.id,
         await this.resolve('subjects', input.subjectId, 'code'),
@@ -692,6 +863,8 @@ class PostgresPlatformRepository {
         await this.resolve('groups', input.groupId),
         input.startsAt,
         input.durationMin,
+        input.recurrenceId || null,
+        input.recurrenceRule ? JSON.stringify(input.recurrenceRule) : null,
       ],
     );
   }

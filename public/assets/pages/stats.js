@@ -239,11 +239,28 @@
     }
     const days = (PERIODS.find(p => p.key === period) || {}).days;
     document.getElementById('content').innerHTML = `
+      ${assessmentControlsHTML()}
       ${kpiHTML(days)}
       <section class="cols c2w">${mockHTML()}${topicsHTML()}</section>
       <section class="cols c2">${heatHTML()}${attendanceHTML(days)}</section>
       ${tnsHTML(days)}
       ${recentHTML()}`;
+  }
+
+  function assessmentControlsHTML() {
+    if (asParent || !subj) return '';
+    const goal=C.db.goals.find(g=>g.studentId===S&&g.subjectId===subj)||{};
+    const exams=C.db.mockExams.filter(m=>m.studentId===S&&m.subjectId===subj).sort((a,b)=>new Date(b.date)-new Date(a.date));
+    return `<section class="card"><div class="head"><div><h2>Цель и пробники</h2><div class="hint">Данные можно менять без прямой работы с базой</div></div></div>
+      <div class="cols c2"><form id="goal-form" class="stack"><label>Целевой балл<input name="score" type="number" min="0" max="100" value="${goal.targetScore||''}" required></label><label>Дата экзамена<input name="date" type="date" value="${goal.examDate||''}"></label><button class="btn" type="submit">Сохранить цель</button></form>
+      <form id="mock-form" class="stack"><label>Вариант<input name="variant" required></label><label>Дата<input name="date" type="date" required></label><label>Баллы по заданиям через запятую<input name="items" placeholder="1, 1, 0, 2"></label><button class="btn" type="submit">Добавить пробник</button></form></div>
+      ${exams.length?`<div class="row-list">${exams.map(m=>`<div class="row"><span class="grow"><span class="t">${UI.esc(m.variant||'Пробник')}</span><span class="s">${C.fmtDate(m.date)} · шкала ${UI.esc(m.scaleVersion||'v1')}</span></span><button class="btn ghost sm" data-delete-mock="${UI.attr(m.id)}">Удалить</button></div>`).join('')}</div>`:''}</section>`;
+  }
+
+  function bindAssessmentControls(){
+    document.getElementById('goal-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;await Api.saveGoal(S,subj,{targetScore:+f.elements.score.value,examDate:f.elements.date.value||null});location.reload();});
+    document.getElementById('mock-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;const items=f.elements.items.value.split(',').map((x,i)=>({number:i+1,score:+x.trim()||0}));await Api.createMockExam({studentId:S,subjectId:subj,variant:f.elements.variant.value,date:f.elements.date.value,items,scaleVersion:'v1'});location.reload();});
+    document.querySelectorAll('[data-delete-mock]').forEach(b=>b.addEventListener('click',async()=>{if(confirm('Удалить результат пробника?')){await Api.deleteMockExam(b.dataset.deleteMock);location.reload();}}));
   }
 
   const periodSwitcher = `<div class="filters csp-u-059">${PERIODS.map(p =>
@@ -266,13 +283,13 @@
   document.querySelectorAll('[data-stat-subj]').forEach(button => button.addEventListener('click', () => {
     subj = button.dataset.statSubj;
     document.querySelectorAll('[data-stat-subj]').forEach(x => x.classList.toggle('on', x.dataset.statSubj === subj));
-    render();
+    render(); bindAssessmentControls();
   }));
   document.querySelectorAll('[data-p]').forEach(b =>
     b.addEventListener('click', () => {
       period = b.dataset.p;
       document.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x.dataset.p === period));
-      render();
+      render(); bindAssessmentControls();
     }));
-  render();
+  render(); bindAssessmentControls();
 })();
