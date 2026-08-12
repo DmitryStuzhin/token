@@ -8,11 +8,12 @@ const { createLogger, requestContext } = require('./logger.js');
 const { securityHeaders, sameOriginProtection, rateLimit } = require('./security.js');
 const { createContainer } = require('../modules/composition.ts');
 const { EmailDelivery } = require('../modules/identity/infrastructure/email-delivery.js');
+const { auditSubjectOperations } = require('./audit.js');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 
 /** Внутри app.use префикс срезан, поэтому у точного совпадения путь равен «/». */
-const onlyExact = middleware => (req, res, next) =>
+const onlyExact = (middleware) => (req, res, next) =>
   req.path === '/' ? middleware(req, res, next) : next();
 const OPEN_PAGES = new Set(['/login.html', '/favicon.ico']);
 
@@ -33,13 +34,17 @@ function createApp(options = {}) {
   if (options.repository) {
     app.locals.repository = options.repository;
   } else if (config.databaseDriver === 'postgres') {
-    const { PostgresPlatformRepository } = require('../modules/platform/infrastructure/postgres-platform-repository.js');
+    const {
+      PostgresPlatformRepository,
+    } = require('../modules/platform/infrastructure/postgres-platform-repository.js');
     app.locals.repository = new PostgresPlatformRepository(app.locals.services.pool);
   } else {
-    const { SqlitePlatformRepository } = require('../modules/platform/infrastructure/sqlite-platform-repository.js');
+    const {
+      SqlitePlatformRepository,
+    } = require('../modules/platform/infrastructure/sqlite-platform-repository.js');
     app.locals.repository = new SqlitePlatformRepository();
   }
-  app.locals.services.events.subscribe('LessonCompleted', event => {
+  app.locals.services.events.subscribe('LessonCompleted', (event) => {
     logger.info('domain_event', {
       eventId: event.eventId,
       eventName: event.eventName,
@@ -84,6 +89,7 @@ function createApp(options = {}) {
     next();
   });
   app.use(A.attach);
+  app.use(auditSubjectOperations);
 
   app.get('/health/live', (req, res) => {
     res.json({ status: 'ok' });
@@ -110,7 +116,9 @@ function createApp(options = {}) {
 
   app.get(/\.html$/, (req, res, next) => {
     if (OPEN_PAGES.has(req.path) || req.user) return next();
-    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    const query = req.originalUrl.includes('?')
+      ? req.originalUrl.slice(req.originalUrl.indexOf('?'))
+      : '';
     const nextPath = encodeURIComponent(req.path.replace(/^\//, '') + query);
     res.redirect('/login.html?next=' + nextPath);
   });
@@ -133,13 +141,15 @@ function createApp(options = {}) {
 
   app.use((err, req, res, next) => {
     const badJson = err && err.type === 'entity.parse.failed';
-    const applicationStatus = err && {
-      VALIDATION_ERROR: 400,
-      INVALID_TRANSITION: 400,
-      NOT_FOUND: 404,
-      FORBIDDEN: 403,
-      CONFLICT: 409,
-    }[err.code];
+    const applicationStatus =
+      err &&
+      {
+        VALIDATION_ERROR: 400,
+        INVALID_TRANSITION: 400,
+        NOT_FOUND: 404,
+        FORBIDDEN: 403,
+        CONFLICT: 409,
+      }[err.code];
     logger.error('request_failed', {
       requestId: req.id,
       method: req.method,
@@ -150,28 +160,40 @@ function createApp(options = {}) {
     if (badJson) {
       if (req.path.startsWith('/api/v1/')) {
         return res.status(400).type('application/problem+json').json({
-          type:'https://token.local/problems/400', title:'Некорректный JSON', status:400,
-          detail:'Тело запроса содержит некорректный JSON', instance:req.originalUrl,
-          requestId:req.id,
+          type: 'https://token.local/problems/400',
+          title: 'Некорректный JSON',
+          status: 400,
+          detail: 'Тело запроса содержит некорректный JSON',
+          instance: req.originalUrl,
+          requestId: req.id,
         });
       }
       return res.status(400).json({ error: 'Некорректный JSON', requestId: req.id });
     }
     if (applicationStatus) {
       if (req.path.startsWith('/api/v1/')) {
-        return res.status(applicationStatus).type('application/problem+json').json({
-          type:`https://token.local/problems/${applicationStatus}`,
-          title:applicationStatus === 409 ? 'Конфликт' : 'Ошибка операции',
-          status:applicationStatus, detail:err.message, instance:req.originalUrl,
-          requestId:req.id,
-        });
+        return res
+          .status(applicationStatus)
+          .type('application/problem+json')
+          .json({
+            type: `https://token.local/problems/${applicationStatus}`,
+            title: applicationStatus === 409 ? 'Конфликт' : 'Ошибка операции',
+            status: applicationStatus,
+            detail: err.message,
+            instance: req.originalUrl,
+            requestId: req.id,
+          });
       }
       return res.status(applicationStatus).json({ error: err.message, requestId: req.id });
     }
     if (req.path.startsWith('/api/v1/')) {
       return res.status(500).type('application/problem+json').json({
-        type:'https://token.local/problems/500', title:'Внутренняя ошибка', status:500,
-        detail:'Внутренняя ошибка сервера', instance:req.originalUrl, requestId:req.id,
+        type: 'https://token.local/problems/500',
+        title: 'Внутренняя ошибка',
+        status: 500,
+        detail: 'Внутренняя ошибка сервера',
+        instance: req.originalUrl,
+        requestId: req.id,
       });
     }
     res.status(500).json({ error: 'Внутренняя ошибка сервера', requestId: req.id });
