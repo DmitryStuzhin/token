@@ -84,6 +84,11 @@ CREATE TABLE IF NOT EXISTS enrollments (
 CREATE INDEX IF NOT EXISTS idx_enr_student ON enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_enr_tutor ON enrollments(tutor_id);
 
+CREATE TABLE IF NOT EXISTS student_rate_history (
+  tutor_id TEXT NOT NULL, student_id TEXT NOT NULL, subject_id TEXT NOT NULL,
+  rate INTEGER NOT NULL CHECK (rate >= 0), effective_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY (tutor_id, student_id, subject_id, effective_at));
+
 CREATE TABLE IF NOT EXISTS groups (
   id TEXT PRIMARY KEY, tutor_id TEXT NOT NULL, subject_id TEXT NOT NULL,
   title TEXT NOT NULL, level TEXT, schedule TEXT, capacity INTEGER,
@@ -218,6 +223,7 @@ const rowUser    = r => ({ id:r.id, role:r.role, name:r.name, email:r.email, pho
 const rowStudent = r => ({ id:r.id, userId:r.user_id, grade:r.grade, school:r.school, startedAt:r.started_at });
 const rowTutor   = r => ({ id:r.id, userId:r.user_id, subjects:J(r.subjects, []), yearsExp:r.years_exp, rate:r.rate, meetingUrl:r.meeting_url });
 const rowEnr     = r => ({ id:r.id, studentId:r.student_id, tutorId:r.tutor_id, subjectId:r.subject_id, status:r.status, startedAt:r.started_at, source:r.source, inviteId:r.invite_id });
+const rowStudentRate = r => ({ tutorId:r.tutor_id, studentId:r.student_id, subjectId:r.subject_id, rate:r.rate, effectiveAt:r.effective_at, updatedAt:r.updated_at });
 const rowGroup   = r => ({ id:r.id, tutorId:r.tutor_id, subjectId:r.subject_id, title:r.title, level:r.level, schedule:r.schedule, capacity:r.capacity, status:r.status, createdAt:r.created_at });
 const rowMember  = r => ({ groupId:r.group_id, studentId:r.student_id, joinedAt:r.joined_at, status:r.status, source:r.source, inviteId:r.invite_id });
 const rowInvite  = r => ({ id:r.id, code:r.code, kind:r.kind, tutorId:r.tutor_id, subjectId:r.subject_id, groupId:r.group_id, studentId:r.student_id, createdBy:r.created_by, createdAt:r.created_at, expiresAt:r.expires_at, maxUses:r.max_uses, usedCount:r.used_count, status:r.status, note:r.note, version:r.version });
@@ -252,6 +258,7 @@ function fullState() {
     tutorProfiles: all('SELECT * FROM tutor_profiles').map(rowTutor),
     guardians: [],
     enrollments: all('SELECT * FROM enrollments').map(rowEnr),
+    studentRates: all('SELECT * FROM student_rate_history').map(rowStudentRate),
     groups: all('SELECT * FROM groups').map(rowGroup),
     groupMembers: all('SELECT * FROM group_members').map(rowMember),
     invites: all('SELECT * FROM invites').map(rowInvite),
@@ -275,7 +282,7 @@ function snapshot(user) {
   const base = Object.assign(reference(), {
     tasks: publicTasks(),
     users: [], studentProfiles: [], tutorProfiles: [], guardians: [],
-    enrollments: [], groups: [], groupMembers: [], invites: [],
+    enrollments: [], studentRates: [], groups: [], groupMembers: [], invites: [],
     goals: [], subscriptions: [], notificationPrefs: [],
     lessons: [], lessonAttendance: [], assignments: [], mockExams: [], attempts: [],
     me: null,
@@ -333,6 +340,9 @@ function snapshot(user) {
     base.subscriptions = all(`SELECT * FROM subscriptions WHERE student_id IN ${inSids}`, ...sids).map(rowSub);
     base.mockExams = all(`SELECT * FROM mock_exams WHERE student_id IN ${inSids}`, ...sids).map(rowMock);
     base.attempts = all(`SELECT * FROM attempts WHERE student_id IN ${inSids}`, ...sids).map(rowAttempt);
+  }
+  if (user.role === 'tutor' && tutorIds.size) {
+    base.studentRates = all('SELECT * FROM student_rate_history WHERE tutor_id = ?', [...tutorIds][0]).map(rowStudentRate);
   }
 
   const tids = [...tutorIds];

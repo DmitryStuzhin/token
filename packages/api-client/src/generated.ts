@@ -373,6 +373,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/student-rates/{studentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setStudentRate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invites": {
         parameters: {
             query?: never;
@@ -541,6 +557,10 @@ export interface components {
             level?: string;
             schedule?: string;
             capacity?: number;
+        };
+        SetStudentRateRequest: {
+            subjectId: string;
+            rate: number;
         };
         CreateLessonRequest: {
             enrollmentId?: string | null;
@@ -1099,6 +1119,26 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: components["responses"]["Paginated"];
+        };
+    };
+    setStudentRate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                studentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStudentRateRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["CommandSuccess"];
+            403: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
         };
     };
     listInvites: {

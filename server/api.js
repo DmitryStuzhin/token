@@ -313,6 +313,22 @@ router.post('/invites/accept', A.requireRole('student'), asyncRoute(async (req, 
   res.json({ ok:true, target:C.inviteTarget(inv) });
 }));
 
+/* ── индивидуальная стоимость занятия ───────────────────────────── */
+router.post('/student-rates/:studentId', A.requireRole('tutor'), asyncRoute(async (req, res) => {
+  const studentId = String(req.params.studentId || '');
+  const subjectId = String((req.body || {}).subjectId || '');
+  const rate = Number((req.body || {}).rate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1000000)
+    return res.status(400).json({ error:'Укажите корректную стоимость занятия' });
+  if (!await repository(req).tutorOwnsStudentSubject(req.tutorId, studentId, subjectId))
+    return res.status(403).json({ error:'Ученик не связан с вами по этому предмету' });
+  await repository(req).setStudentRate({
+    tutorId:req.tutorId, studentId, subjectId,
+    rate:Math.round(rate), effectiveAt:now().slice(0, 10), updatedAt:now(),
+  });
+  res.json({ ok:true, studentId, subjectId, rate:Math.round(rate) });
+}));
+
 /* ── группы ──────────────────────────────────────────────────────── */
 router.post('/groups', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   const { subjectId, title, level, schedule, capacity } = req.body || {};
