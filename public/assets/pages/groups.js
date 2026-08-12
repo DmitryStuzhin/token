@@ -48,7 +48,7 @@
     active: 'groups',
     head: { title:'Группы',
       sub:`${groups.length} ${C.plural(groups.length,'группа','группы','групп')}`,
-      actions:`<a class="btn ghost" href="/invites.html">Набор в группу</a>` },
+      actions:`<a class="btn ghost" href="/students.html#invitations">Набор в группу</a>` },
     body: tableHTML(),
   });
 

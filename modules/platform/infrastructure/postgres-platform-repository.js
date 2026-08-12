@@ -61,6 +61,7 @@ class PostgresPlatformRepository {
       'topics',
       'tasks',
       'enrollments',
+      'student_rate_history',
       'groups',
       'group_members',
       'invites',
@@ -206,6 +207,14 @@ class PostgresPlatformRepository {
         startedAt: row.started_at,
         source: row.source,
         inviteId: inviteIds.get(String(row.invite_id)) || null,
+      })),
+      studentRates: data.student_rate_history.map((row) => ({
+        tutorId: tutorIds.get(String(row.tutor_id)),
+        studentId: studentIds.get(String(row.student_id)),
+        subjectId: subjectIds.get(String(row.subject_id)),
+        rate: Number(row.rate_minor) / 100,
+        effectiveAt: row.effective_at,
+        updatedAt: row.updated_at,
       })),
       groups: data.groups.map((row) => ({
         id: external(row),
@@ -360,6 +369,7 @@ class PostgresPlatformRepository {
       studentProfiles: [],
       tutorProfiles: [],
       enrollments: [],
+      studentRates: [],
       groups: [],
       groupMembers: [],
       invites: [],
@@ -422,6 +432,8 @@ class PostgresPlatformRepository {
     ]);
     base.users = state.users.filter((item) => visibleUsers.has(item.id));
     base.enrollments = state.enrollments.filter((item) => studentIds.has(item.studentId));
+    base.studentRates =
+      user.role === 'tutor' ? state.studentRates.filter((item) => tutorIds.has(item.tutorId)) : [];
     base.groupMembers = state.groupMembers.filter((item) => studentIds.has(item.studentId));
     base.goals = state.goals.filter((item) => studentIds.has(item.studentId));
     base.subscriptions = state.subscriptions.filter((item) => studentIds.has(item.studentId));
@@ -517,6 +529,38 @@ class PostgresPlatformRepository {
     return item
       ? { ...item, tutor_id: item.tutorId, subject_id: item.subjectId, student_id: item.studentId }
       : null;
+  }
+  async tutorOwnsStudentSubject(tutorId, studentId, subjectId) {
+    const ids = await Promise.all([
+      this.resolve('tutor_profiles', tutorId),
+      this.resolve('student_profiles', studentId),
+      this.resolve('subjects', subjectId, 'code'),
+    ]);
+    if (ids.some((id) => !id)) return false;
+    const result = await this.query(
+      `SELECT 1 FROM enrollments
+      WHERE tutor_id=$1 AND student_id=$2 AND subject_id=$3 AND status='active'
+      UNION ALL
+      SELECT 1 FROM group_members gm JOIN groups g ON g.id=gm.group_id
+      WHERE g.tutor_id=$1 AND gm.student_id=$2 AND g.subject_id=$3 AND gm.status='active'
+      LIMIT 1`,
+      ids,
+    );
+    return result.rowCount > 0;
+  }
+  async setStudentRate(input) {
+    const [tutorId, studentId, subjectId] = await Promise.all([
+      this.resolve('tutor_profiles', input.tutorId),
+      this.resolve('student_profiles', input.studentId),
+      this.resolve('subjects', input.subjectId, 'code'),
+    ]);
+    return this.query(
+      `INSERT INTO student_rate_history
+      (tutor_id,student_id,subject_id,rate_minor,effective_at,updated_at)
+      VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT(tutor_id,student_id,subject_id,effective_at)
+      DO UPDATE SET rate_minor=excluded.rate_minor,updated_at=now()`,
+      [tutorId, studentId, subjectId, Math.round(input.rate * 100), input.effectiveAt],
+    );
   }
   async activeGroupStudentIds(groupId) {
     const id = await this.resolve('groups', groupId);

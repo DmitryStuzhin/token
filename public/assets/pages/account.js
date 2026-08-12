@@ -1,7 +1,38 @@
 (function () {
-  const ses = Auth.require('student');
+  const ses = Auth.require(['student', 'tutor']);
   if (!ses) return;
   const C = Core;
+
+  if (ses.role === 'tutor') {
+    const prof = C.tutorProfile(ses.tutorId) || ses.profile || {};
+    const subjects = (prof.subjects || []).map(id => C.subject(id)).filter(Boolean);
+    const body = `
+      <div class="cols c2">
+        <section class="card">
+          <div class="head"><h2>Личные данные</h2></div>
+          <div class="field"><div class="k">ФИО</div><div class="v">${UI.esc(ses.user.name)}</div></div>
+          <div class="field"><div class="k">Email</div><div class="v">${UI.esc(ses.user.email)}</div></div>
+          <div class="field"><div class="k">Телефон</div><div class="v">${UI.esc(ses.user.phone || '—')}</div></div>
+          <div class="field"><div class="k">Часовой пояс</div><div class="v">${UI.esc(ses.user.tz || '—')}</div></div>
+        </section>
+        <section class="card">
+          <div class="head"><h2>Профиль репетитора</h2></div>
+          <div class="field"><div class="k">Предметы</div><div class="v">${subjects.length ? subjects.map(UI.subjectTag).join(' ') : '—'}</div></div>
+          <div class="field"><div class="k">Опыт</div><div class="v">${Number(prof.yearsExp || 0)} лет</div></div>
+          <div class="field"><div class="k">Базовая стоимость занятия</div><div class="v">${C.fmtMoney(prof.rate || 0)}</div></div>
+          <div class="field"><div class="k">Ссылка для занятий</div><div class="v">${prof.meetingUrl ? `<a href="${UI.attr(prof.meetingUrl)}" target="_blank" rel="noopener">${UI.esc(prof.meetingUrl)}</a>` : '—'}</div></div>
+        </section>
+      </div>`;
+
+    UI.page({
+      session: ses,
+      active: 'account',
+      head: { title:'Профиль', sub:'Данные вашего аккаунта', actions:'<a class="btn ghost" href="/tutor.html">На главную</a>' },
+      body,
+    });
+    return;
+  }
+
   const S = ses.studentId;
   const me = C.studentUser(S);
   const prof = C.student(S);

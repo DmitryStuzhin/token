@@ -46,7 +46,7 @@ test('guest is redirected to login and can register as tutor', async ({ page }) 
   await submitVerifyAndLogin(page, tutor);
 
   await expect(page).toHaveURL(/\/tutor\.html$/);
-  await expect(page.getByRole('heading', { name: /Сегодня/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Добро пожаловать/ })).toBeVisible();
   await expect(page.getByText(tutor.name)).toBeVisible();
 });
 

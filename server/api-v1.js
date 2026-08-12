@@ -29,6 +29,7 @@ const EMPTY_COLLECTIONS = [
   'assignments',
   'mockExams',
   'attempts',
+  'studentRates',
 ];
 const COMMON = ['subjects', 'topics', 'users', 'studentProfiles', 'tutorProfiles', 'me'];
 const SCREEN_FIELDS = {
@@ -56,6 +57,7 @@ const SCREEN_FIELDS = {
     'lessonAttendance',
     'assignments',
     'attempts',
+    'studentRates',
   ],
   students: [
     ...COMMON,
@@ -67,6 +69,8 @@ const SCREEN_FIELDS = {
     'lessonAttendance',
     'assignments',
     'attempts',
+    'studentRates',
+    'invites',
   ],
   groups: [
     ...COMMON,
@@ -227,6 +231,13 @@ const bodySchemas = [
       level: z.string().max(100).optional(),
       schedule: z.string().max(500).optional(),
       capacity: z.number().int().min(1).max(1000).optional(),
+    }),
+  ],
+  [
+    /^\/student-rates\/[^/]+$/,
+    z.object({
+      subjectId: z.string().min(1).max(100),
+      rate: z.coerce.number().min(0).max(1000000),
     }),
   ],
   [

@@ -88,6 +88,34 @@ class SqlitePlatformRepository {
   findEnrollment(id) {
     return db.prepare('SELECT * FROM enrollments WHERE id = ?').get(id) || null;
   }
+  tutorOwnsStudentSubject(tutorId, studentId, subjectId) {
+    return !!db
+      .prepare(
+        `SELECT 1 FROM enrollments
+      WHERE tutor_id=? AND student_id=? AND subject_id=? AND status='active'
+      UNION ALL
+      SELECT 1 FROM group_members gm JOIN groups g ON g.id=gm.group_id
+      WHERE g.tutor_id=? AND gm.student_id=? AND g.subject_id=? AND gm.status='active'
+      LIMIT 1`,
+      )
+      .get(tutorId, studentId, subjectId, tutorId, studentId, subjectId);
+  }
+  setStudentRate(input) {
+    return db
+      .prepare(
+        `INSERT INTO student_rate_history (tutor_id,student_id,subject_id,rate,effective_at,updated_at)
+      VALUES (?,?,?,?,?,?) ON CONFLICT(tutor_id,student_id,subject_id,effective_at)
+      DO UPDATE SET rate=excluded.rate,updated_at=excluded.updated_at`,
+      )
+      .run(
+        input.tutorId,
+        input.studentId,
+        input.subjectId,
+        input.rate,
+        input.effectiveAt,
+        input.updatedAt,
+      );
+  }
   activeGroupStudentIds(groupId) {
     return db
       .prepare("SELECT student_id FROM group_members WHERE group_id = ? AND status = 'active'")

@@ -69,6 +69,7 @@ window.Api = (function () {
 
     /* группы и занятия */
     createGroup: data => post('/groups', data),
+    setStudentRate: (studentId, subjectId, rate) => post('/student-rates/' + encodeURIComponent(studentId), { subjectId, rate }),
     createLesson: data => post('/lessons', data),
     addLink: (lessonId, link) => post('/lessons/' + lessonId + '/links', link),
     removeLink: (lessonId, i) => del('/lessons/' + lessonId + '/links/' + i),

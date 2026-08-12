@@ -16,20 +16,62 @@
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))
     .filter(l => !today.some(t => t.id === l.id))
     .slice(0, 5);
+  const nextLesson = today[0] || upcoming[0] || null;
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+  const tutorEnrollmentIds = C.db.enrollments.filter(e => e.tutorId === T).map(e => e.id);
+  const tutorGroupIds = groups.map(g => g.id);
+  const tutorLessons = C.db.lessons.filter(l =>
+    (l.enrollmentId && tutorEnrollmentIds.includes(l.enrollmentId)) ||
+    (l.groupId && tutorGroupIds.includes(l.groupId)));
+  function rateFor(studentId, subjectId, at) {
+    const day = new Date(at || Date.now()).toISOString().slice(0, 10);
+    const custom = (C.db.studentRates || []).filter(rate =>
+      rate.tutorId === T && rate.studentId === studentId && rate.subjectId === subjectId &&
+      String(rate.effectiveAt) <= day)
+      .sort((a, b) => String(b.effectiveAt).localeCompare(String(a.effectiveAt)))[0];
+    return custom ? Number(custom.rate) : Number(tp.rate || 0);
+  }
+  function lessonIncome(lesson) {
+    return [...new Set(C.studentsOfLesson(lesson))]
+      .reduce((sum, studentId) => sum + rateFor(studentId, lesson.subjectId, lesson.startsAt), 0);
+  }
+  const lessonsThisWeek = tutorLessons.filter(l => {
+    const at = new Date(l.startsAt);
+    return at >= weekStart && at < weekEnd && l.status !== 'cancelled';
+  });
 
   /* ── показатели ─────────────────────────────────────────────── */
   function kpiHTML() {
-    const overdue = sids.reduce((s, sid) =>
-      s + C.assignmentsOf(sid).filter(a => a.status === 'overdue').length, 0);
     const cells = [
-      { v: todayAll.length,  s:'занятий сегодня', c:'k-blue' },
-      { v: queue.length,  s:'работ на проверке', c: queue.length ? 'k-amber' : 'k-green' },
-      { v: sids.length,   s:'учеников', c:'k-violet' },
-      { v: groups.length, s:'групп', c:'k-green' },
-      { v: overdue,       s:'просроченных д/з', c: overdue ? 'k-red' : 'k-green' },
+      { v: sids.length, s:'учеников', c:'k-green' },
+      { v: lessonsThisWeek.length, s:'занятий на неделе', c:'k-blue' },
+      { v: `${lessonsThisWeek.reduce((sum, l) => sum + (l.durationMin || 0), 0) / 60}`.replace('.5', ',5') + ' ч', s:'нагрузка', c:'k-amber' },
+      { v: queue.length, s:'работ на проверке', c:'k-violet' },
     ];
-    return `<section class="kpis kpis-5">${cells.map(x =>
+    return `<section class="kpis tutor-kpis">${cells.map(x =>
       `<div class="kpi ${x.c}"><b>${x.v}</b><span>${x.s}</span></div>`).join('')}</section>`;
+  }
+
+  function nextLessonHTML() {
+    if (!nextLesson) return `<section class="tutor-next tutor-next-empty">
+      <div><span class="tutor-eyebrow">Ближайшее занятие</span>
+        <h2>Занятий пока не запланировано</h2>
+        <p>Создайте занятие для ученика или группы.</p></div>
+      ${sids.length ? '<a class="btn white" href="/tutor.html?new=lesson">Назначить занятие</a>' : '<a class="btn white" href="/students.html#invitations">Пригласить ученика</a>'}</section>`;
+    const subj = C.subject(nextLesson.subjectId);
+    const group = nextLesson.groupId ? C.group(nextLesson.groupId) : null;
+    const student = C.studentUser(C.studentsOfLesson(nextLesson)[0]);
+    const who = group ? group.title : (student || {}).name || 'Ученик';
+    const day = C.relDay(nextLesson.startsAt) || C.fmtDate(nextLesson.startsAt);
+    return `<section class="tutor-next">
+      <div><span class="tutor-eyebrow">Ближайшее занятие</span>
+        <h2>${UI.esc((subj || {}).name || 'Занятие')} · ${day} в ${C.fmtTime(nextLesson.startsAt)}</h2>
+        <p>${UI.esc(who)} · ${nextLesson.durationMin} минут</p></div>
+      <a class="btn white" href="/lesson.html?lesson=${nextLesson.id}">Открыть занятие</a>
+    </section>`;
   }
 
   /* ── строка занятия ─────────────────────────────────────────── */
@@ -65,12 +107,63 @@
     const completedNotice = UI.qs('completed')
       ? `<div class="note n-green" id="completed-notice" role="status">Занятие завершено и сохранено. Сегодня проведено: ${completedToday.length}.</div>`
       : '';
-    return `<section class="card">
-      <div class="head"><div><h2>Сегодня</h2>
+    return `<section class="card tutor-schedule">
+      <div class="head"><div><h2>Расписание на сегодня</h2>
         <div class="hint">${C.fmtDateFull(Date.now())}</div></div>
         ${sids.length ? '<button class="btn sm" id="newlesson">Назначить занятие</button>' : ''}</div>
       ${completedNotice}${body}
       <div id="lessonform"></div></section>`;
+  }
+
+  function activityHTML() {
+    const rows = sids.map(sid => {
+      const user = C.studentUser(sid);
+      const kpi = C.kpi(sid);
+      const progress = kpi.accuracy == null ? 0 : kpi.accuracy;
+      return { sid, user, kpi, progress };
+    }).sort((a, b) => b.kpi.solvedWeek - a.kpi.solvedWeek).slice(0, 5);
+    const body = rows.length ? rows.map(x => `<a class="tutor-student" href="/stats.html?student=${x.sid}">
+      ${UI.avatar(x.user.name)}
+      <span class="grow"><b>${UI.esc(x.user.name)}</b><small>${x.kpi.solvedWeek} ${C.plural(x.kpi.solvedWeek,'задача','задачи','задач')} за неделю</small></span>
+      <span class="tutor-progress"><i class="width-${Math.round(x.progress / 5) * 5}"></i></span>
+      <strong>${x.kpi.accuracy == null ? '—' : x.kpi.accuracy + '%'}</strong>
+    </a>`).join('') : UI.empty('Активности пока нет', 'Здесь появится прогресс ваших учеников.');
+    return `<section class="card tutor-activity"><div class="head"><div><h2>Активность учеников</h2>
+      <div class="hint">Решённые задачи и точность за неделю</div></div><a href="/students.html">Все ученики</a></div>${body}</section>`;
+  }
+
+  function incomeHTML() {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const completed = tutorLessons.filter(l => {
+      const at = new Date(l.startsAt);
+      return l.status === 'done' && at >= monthStart && at < monthEnd;
+    });
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const marks = [1, 8, 15, 22, daysInMonth];
+    const totals = marks.map(day => completed
+      .filter(l => new Date(l.startsAt).getDate() <= day)
+      .reduce((sum, lesson) => sum + lessonIncome(lesson), 0));
+    const maximum = Math.max(...totals, Number(tp.rate || 0) || 1);
+    const points = totals.map((value, index) => {
+      const x = 12 + index * 44;
+      const y = 86 - Math.round(value / maximum * 66);
+      return `${x},${y}`;
+    }).join(' ');
+    const amount = completed.reduce((sum, lesson) => sum + lessonIncome(lesson), 0);
+    return `<section class="card tutor-income">
+      <div class="head"><div><h2>Доход</h2><div class="hint">За ${now.toLocaleDateString('ru-RU',{month:'long'})}</div></div>
+        <span class="badge b-green">${completed.length} ${C.plural(completed.length,'занятие','занятия','занятий')}</span></div>
+      <strong>${C.fmtMoney(amount)}</strong>
+      <div class="tutor-income-note">По индивидуальным ставкам учеников · базовая ${C.fmtMoney(tp.rate || 0)}</div>
+      <svg class="tutor-income-chart" viewBox="0 0 200 100" role="img" aria-label="Накопительный доход за месяц">
+        <line x1="12" y1="86" x2="188" y2="86"></line>
+        <polyline points="${points}"></polyline>
+        ${points.split(' ').map(point => { const [x,y] = point.split(','); return `<circle cx="${x}" cy="${y}" r="3"></circle>`; }).join('')}
+      </svg>
+      <div class="tutor-income-axis"><span>1 ${now.toLocaleDateString('ru-RU',{month:'short'})}</span><span>15 ${now.toLocaleDateString('ru-RU',{month:'short'})}</span><span>${daysInMonth} ${now.toLocaleDateString('ru-RU',{month:'short'})}</span></div>
+    </section>`;
   }
 
   function upcomingHTML() {
@@ -102,21 +195,19 @@
     if (sids.length) return '';
     return `<div class="note n-blue csp-u-047">
       Учеников пока нет. Они появляются сами: выпустите ссылку во вкладке
-      <a href="/invites.html">«Приглашения»</a> и отправьте её.
+      <a href="/students.html#invitations">«Ученики»</a> и создайте приглашение внизу страницы.
     </div>`;
   }
 
   UI.page({
     session: ses,
     active: 'today',
-    head: { title:`Здравствуйте, ${me.name.split(' ')[0]}!`,
-      sub:`${sids.length} ${C.plural(sids.length,'ученик','ученика','учеников')} · ${groups.length}
-           ${C.plural(groups.length,'группа','группы','групп')} · ${(tp.subjects || [])
-             .map(id => UI.esc((C.subject(id) || {}).name || id)).join(', ')}`,
-      actions:`<a class="btn ghost" href="/tutor-check.html">Очередь проверки</a>` },
-    body: `${hintHTML()}${kpiHTML()}
-      <div class="cols c2">${todayHTML()}${queueHTML()}</div>
-      ${upcomingHTML()}`,
+    head: { title:`Добро пожаловать, ${UI.esc(me.name.split(' ')[0])}!`,
+      sub:C.fmtDateFull(Date.now()),
+      actions: queue.length ? `<a class="btn ghost" href="/tutor-check.html">На проверке · ${queue.length}</a>` : '' },
+    body: `<div class="tutor-dashboard">${hintHTML()}${nextLessonHTML()}${kpiHTML()}
+      ${todayHTML()}<div class="cols c2 tutor-lower">${activityHTML()}${incomeHTML()}</div>
+      ${queueHTML()}${upcomingHTML()}</div>`,
   });
 
   /* ── назначение занятия ─────────────────────────────────────── */
