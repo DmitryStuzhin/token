@@ -75,6 +75,7 @@ const bodySchemas = [
   [/^\/groups$/, z.object({ subjectId:z.string(), title:z.string().min(1).max(200), level:z.string().max(100).optional(), schedule:z.string().max(500).optional(), capacity:z.number().int().min(1).max(1000).optional() })],
   [/^\/lessons$/, z.object({ enrollmentId:z.string().nullable().optional(), groupId:z.string().nullable().optional(), startsAt:z.iso.datetime(), durationMin:z.number().int().min(10).max(600).optional() })],
   [/^\/lessons\/[^/]+\/links$/, z.object({ type:z.enum(['call','board','material']).optional(), label:z.string().max(300).optional(), url:z.url() })],
+  [/^\/lessons\/[^/]+\/note$/, z.object({ text:z.string().max(5000), visibility:z.enum(['private','student','parent']).optional() })],
   [/^\/lessons\/[^/]+\/tasks$/, z.object({ taskId:z.string().min(1).max(200) })],
   [/^\/lessons\/[^/]+\/status$/, z.object({ status:z.enum(['planned','done','moved','cancelled','missed']) })],
   [/^\/assignments$/, z.object({ enrollmentId:z.string().optional(), groupId:z.string().optional(), lessonId:z.string().nullable().optional(), title:z.string().min(1).max(300), dueAt:z.iso.datetime().optional(), taskIds:z.array(z.string()).min(1).max(500) })],

@@ -26,9 +26,7 @@ test.after(() => {
 });
 
 test('liveness and readiness expose request correlation', async () => {
-  const live = await request(app)
-    .get('/health/live')
-    .set('X-Request-Id', 'integration-live');
+  const live = await request(app).get('/health/live').set('X-Request-Id', 'integration-live');
   assert.equal(live.status, 200);
   assert.equal(live.headers['x-request-id'], 'integration-live');
   assert.deepEqual(live.body, { status: 'ok' });
@@ -54,14 +52,22 @@ test('student session cannot execute tutor commands or see reference answers', a
   const tasks = await student.get('/api/tasks');
   assert.equal(tasks.status, 200);
   assert.ok(tasks.body.length > 0);
-  assert.equal(tasks.body.some(task => Object.hasOwn(task, 'answer')), false);
+  assert.equal(
+    tasks.body.some((task) => Object.hasOwn(task, 'answer')),
+    false,
+  );
 
   const state = await student.get('/api/state');
   assert.equal(state.status, 200);
-  assert.equal(state.body.tasks.some(task => Object.hasOwn(task, 'answer')), false);
+  assert.equal(
+    state.body.tasks.some((task) => Object.hasOwn(task, 'answer')),
+    false,
+  );
 
   const forbidden = await student.post('/api/groups').send({
-    subjectId: 'inf', title: 'Чужая операция', capacity: 5,
+    subjectId: 'inf',
+    title: 'Чужая операция',
+    capacity: 5,
   });
   assert.equal(forbidden.status, 403);
 });
@@ -116,7 +122,7 @@ test('main learning flow works through public API', async () => {
 
   const tutorState = await tutor.get('/api/state');
   assert.equal(tutorState.status, 200);
-  const enrollment = tutorState.body.enrollments.find(item => item.subjectId === 'inf');
+  const enrollment = tutorState.body.enrollments.find((item) => item.subjectId === 'inf');
   assert.ok(enrollment);
 
   const lesson = await tutor.post('/api/lessons').send({
@@ -127,7 +133,7 @@ test('main learning flow works through public API', async () => {
   assert.equal(lesson.status, 200, JSON.stringify(lesson.body));
 
   const tasks = await tutor.get(`/api/tasks?subject=${fixture.taskSelection.subjectId}`);
-  const publicTask = tasks.body.find(item => item.autoCheck === fixture.taskSelection.autoCheck);
+  const publicTask = tasks.body.find((item) => item.autoCheck === fixture.taskSelection.autoCheck);
   assert.ok(publicTask);
   assert.equal(Object.hasOwn(publicTask, 'answer'), false);
 
@@ -137,8 +143,9 @@ test('main learning flow works through public API', async () => {
   assert.equal(attached.status, 200);
 
   const studentState = await student.get('/api/state');
-  const attempt = studentState.body.attempts.find(item =>
-    item.lessonId === lesson.body.id && item.taskId === publicTask.id);
+  const attempt = studentState.body.attempts.find(
+    (item) => item.lessonId === lesson.body.id && item.taskId === publicTask.id,
+  );
   assert.ok(attempt);
 
   const foreignAttempt = await otherStudent
@@ -152,11 +159,15 @@ test('main learning flow works through public API', async () => {
   assert.equal(foreignLesson.status, 403);
 
   const group = await tutor.post('/api/groups').send({
-    subjectId: 'inf', title: 'Группа владельца', capacity: 5,
+    subjectId: 'inf',
+    title: 'Группа владельца',
+    capacity: 5,
   });
   assert.equal(group.status, 200);
   const foreignGroup = await otherTutor.post('/api/invites').send({
-    kind: 'group', groupId: group.body.id, maxUses: 1,
+    kind: 'group',
+    groupId: group.body.id,
+    maxUses: 1,
   });
   assert.equal(foreignGroup.status, 403);
 
@@ -169,10 +180,13 @@ test('main learning flow works through public API', async () => {
   assert.equal(incorrect.body.correct, false);
   assert.equal(incorrect.body.tries, 1);
   const stateAfterError = (await student.get('/api/state')).body;
-  const failedAttempt = stateAfterError.attempts.find(item => item.id === attempt.id);
+  const failedAttempt = stateAfterError.attempts.find((item) => item.id === attempt.id);
   assert.equal(failedAttempt.status, 'in_progress');
   assert.equal(failedAttempt.isCorrect, false);
-  assert.equal(createCore(stateAfterError).kpi(enrollment.studentId, publicTask.subjectId).accuracy, 0);
+  assert.equal(
+    createCore(stateAfterError).kpi(enrollment.studentId, publicTask.subjectId).accuracy,
+    0,
+  );
 
   const checked = await student.post(`/api/attempts/${attempt.id}/answer`).send({
     answer: hiddenTask.answer,
@@ -183,18 +197,35 @@ test('main learning flow works through public API', async () => {
   assert.equal(checked.body.tries, 2);
 
   const finalState = await student.get('/api/state');
-  const finalAttempt = finalState.body.attempts.find(item => item.id === attempt.id);
+  const finalAttempt = finalState.body.attempts.find((item) => item.id === attempt.id);
   assert.equal(finalAttempt.status, 'checked');
   assert.equal(finalAttempt.isCorrect, true);
   assert.equal(finalAttempt.activeSeconds, 42);
+
+  const savedNote = await tutor.put(`/api/lessons/${lesson.body.id}/note`).send({
+    text: 'На повторение: двоичная арифметика',
+    visibility: 'private',
+  });
+  assert.equal(savedNote.status, 200);
+  const tutorLesson = (await tutor.get('/api/state')).body.lessons.find(
+    (item) => item.id === lesson.body.id,
+  );
+  assert.equal(tutorLesson.note.text, 'На повторение: двоичная арифметика');
+  assert.equal(tutorLesson.note.visibility, 'private');
+  const studentLesson = (await student.get('/api/state')).body.lessons.find(
+    (item) => item.id === lesson.body.id,
+  );
+  assert.equal(studentLesson.note, null);
 
   const completed = await tutor.post(`/api/lessons/${lesson.body.id}/status`).send({
     status: 'done',
   });
   assert.equal(completed.status, 200);
-  const persistedLesson = db.prepare('SELECT status, version FROM lessons WHERE id = ?').get(lesson.body.id);
+  const persistedLesson = db
+    .prepare('SELECT status, version FROM lessons WHERE id = ?')
+    .get(lesson.body.id);
   assert.equal(persistedLesson.status, 'done');
-  assert.equal(persistedLesson.version, 3);
+  assert.equal(persistedLesson.version, 4);
 
   const invalidReopen = await tutor.post(`/api/lessons/${lesson.body.id}/status`).send({
     status: 'planned',

@@ -363,6 +363,11 @@ function snapshot(user) {
     const ph = holders.map(() => '?').join(',');
     base.lessons = all(`SELECT * FROM lessons WHERE enrollment_id IN (${ph}) OR group_id IN (${ph})`,
       ...holders, ...holders).map(rowLesson);
+    if (user.role === 'student') {
+      base.lessons = base.lessons.map(lesson => lesson.note?.visibility === 'private'
+        ? { ...lesson, note:null }
+        : lesson);
+    }
     base.assignments = all(`SELECT * FROM assignments WHERE enrollment_id IN (${ph}) OR group_id IN (${ph})`,
       ...holders, ...holders).map(rowAsg);
   }
