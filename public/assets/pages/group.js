@@ -103,7 +103,7 @@
     if (!invite) return `<div class="card">
       <div class="head"><h2>Набор в группу</h2></div>
       ${UI.empty('Активной ссылки нет', 'Создайте приглашение на странице репетитора.')}
-      <a class="btn ghost sm csp-u-053" href="/invites.html">К приглашениям</a></div>`;
+      <a class="btn ghost sm csp-u-053" href="/students.html#invitations">К приглашениям</a></div>`;
     const url = C.inviteUrl(invite.code);
     const left = invite.maxUses == null ? '∞' : Math.max(0, invite.maxUses - invite.usedCount);
     return `<div class="card">

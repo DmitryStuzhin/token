@@ -16,12 +16,11 @@ window.UI = (function () {
     if (s.role === 'tutor') {
       const q = C.reviewQueue(s.tutorId).length;
       return [
-        { key:'today',    href:'/tutor.html',       ico:'◧', label:'Сегодня' },
+        { key:'today',    href:'/tutor.html',       ico:'⌂', label:'Главная' },
         { key:'lesson',   href:'/lesson.html',      ico:'▶', label:'Занятие' },
         { key:'check',    href:'/tutor-check.html', ico:'✓', label:'Проверка', pill:q || null },
         { key:'students', href:'/students.html',    ico:'☺', label:'Ученики' },
         { key:'groups',   href:'/groups.html',      ico:'⛁', label:'Группы' },
-        { key:'invites',  href:'/invites.html',     ico:'⇗', label:'Приглашения' },
         { key:'bank',     href:'/bank.html',        ico:'▤', label:'Банк задач' },
       ];
     }
@@ -44,19 +43,23 @@ window.UI = (function () {
         <span class="ico">${i.ico}</span>${i.label}
         ${i.pill ? `<span class="pill">${i.pill}</span>` : ''}
       </a>`).join('');
+    const profileCard = `<div class="rolepick csp-rolepick">
+      ${avatar(s.user.name, s.role === 'tutor' ? 'blue' : '')}
+      <div class="csp-rolecopy">
+        <div class="csp-role-name">${esc(s.user.name)}</div>
+        <div class="muted csp-role-email">${esc(s.user.email)}</div>
+      </div>
+    </div>`;
+    const profileLink = ['student', 'tutor'].includes(s.role)
+      ? `<a href="/account.html" class="profile-link" aria-label="Открыть личный кабинет">${profileCard}</a>`
+      : profileCard;
 
     return `
       <aside class="sidebar">
         <div class="logo">Token<small>${esc(Auth.ROLES[s.role].label)}</small></div>
         <nav class="nav">${items}</nav>
         <div class="side-foot">
-          ${s.role === 'student' ? '<a href="/account.html" class="profile-link" aria-label="Открыть профиль">' : ''}<div class="rolepick csp-rolepick">
-            ${avatar(s.user.name, s.role === 'tutor' ? 'blue' : '')}
-            <div class="csp-rolecopy">
-              <div class="csp-role-name">${esc(s.user.name)}</div>
-              <div class="muted csp-role-email">${esc(s.user.email)}</div>
-            </div>
-          </div>${s.role === 'student' ? '</a>' : ''}
+          ${profileLink}
           <a href="#" class="logout" id="do-logout"><span class="ico">⏻</span>Выйти</a>
         </div>
       </aside>`;

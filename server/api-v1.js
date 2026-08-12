@@ -9,7 +9,7 @@ const router = express.Router();
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 const EMPTY_COLLECTIONS = [
   'subjects', 'topics', 'tasks', 'users', 'studentProfiles', 'tutorProfiles',
-  'guardians', 'enrollments', 'groups', 'groupMembers', 'invites', 'goals',
+  'guardians', 'enrollments', 'studentRates', 'groups', 'groupMembers', 'invites', 'goals',
   'subscriptions', 'notificationPrefs', 'lessons', 'lessonAttendance',
   'assignments', 'mockExams', 'attempts',
 ];
@@ -18,10 +18,10 @@ const SCREEN_FIELDS = {
   login: ['subjects', 'me'],
   index: [...COMMON, 'tasks', 'enrollments', 'groups', 'groupMembers', 'goals',
     'subscriptions', 'lessons', 'lessonAttendance', 'assignments', 'attempts'],
-  tutor: [...COMMON, 'tasks', 'enrollments', 'groups', 'groupMembers', 'lessons',
+  tutor: [...COMMON, 'tasks', 'enrollments', 'studentRates', 'groups', 'groupMembers', 'lessons',
     'lessonAttendance', 'assignments', 'attempts'],
-  students: [...COMMON, 'tasks', 'enrollments', 'groups', 'groupMembers', 'lessons',
-    'lessonAttendance', 'assignments', 'attempts'],
+  students: [...COMMON, 'tasks', 'enrollments', 'studentRates', 'groups', 'groupMembers', 'lessons',
+    'lessonAttendance', 'assignments', 'attempts', 'invites'],
   groups: [...COMMON, 'groups', 'groupMembers', 'invites', 'lessons',
     'lessonAttendance', 'assignments', 'attempts'],
   group: [...COMMON, 'tasks', 'enrollments', 'groups', 'groupMembers', 'invites',
@@ -73,6 +73,7 @@ const bodySchemas = [
   [/^\/invites$/, z.object({ kind:z.enum(['enrollment','group']), subjectId:z.string().optional(), groupId:z.string().optional(), maxUses:z.number().int().min(1).max(10000).nullable().optional(), expiresAt:z.iso.datetime().nullable().optional(), note:z.string().max(2000).optional() })],
   [/^\/invites\/accept$/, z.object({ code:z.string().min(3).max(100) })],
   [/^\/groups$/, z.object({ subjectId:z.string(), title:z.string().min(1).max(200), level:z.string().max(100).optional(), schedule:z.string().max(500).optional(), capacity:z.number().int().min(1).max(1000).optional() })],
+  [/^\/student-rates\/[^/]+$/, z.object({ subjectId:z.string().min(1).max(100), rate:z.coerce.number().min(0).max(1000000) })],
   [/^\/lessons$/, z.object({ enrollmentId:z.string().nullable().optional(), groupId:z.string().nullable().optional(), startsAt:z.iso.datetime(), durationMin:z.number().int().min(10).max(600).optional() })],
   [/^\/lessons\/[^/]+\/links$/, z.object({ type:z.enum(['call','board','material']).optional(), label:z.string().max(300).optional(), url:z.url() })],
   [/^\/lessons\/[^/]+\/tasks$/, z.object({ taskId:z.string().min(1).max(200) })],

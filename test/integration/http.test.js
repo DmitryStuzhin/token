@@ -119,6 +119,26 @@ test('main learning flow works through public API', async () => {
   const enrollment = tutorState.body.enrollments.find(item => item.subjectId === 'inf');
   assert.ok(enrollment);
 
+  const priced = await tutor.post(`/api/student-rates/${enrollment.studentId}`).send({
+    subjectId:'inf', rate:1500,
+  });
+  assert.equal(priced.status, 200);
+  assert.equal(priced.body.rate, 1500);
+  const pricedTutorState = (await tutor.get('/api/state')).body;
+  assert.deepEqual(pricedTutorState.studentRates.map(item => ({
+    studentId:item.studentId, subjectId:item.subjectId, rate:item.rate,
+  })), [{ studentId:enrollment.studentId, subjectId:'inf', rate:1500 }]);
+
+  const foreignRate = await otherTutor.post(`/api/student-rates/${enrollment.studentId}`).send({
+    subjectId:'inf', rate:1,
+  });
+  assert.equal(foreignRate.status, 403);
+  const studentCannotPrice = await student.post(`/api/student-rates/${enrollment.studentId}`).send({
+    subjectId:'inf', rate:1,
+  });
+  assert.equal(studentCannotPrice.status, 403);
+  assert.deepEqual((await student.get('/api/state')).body.studentRates, []);
+
   const lesson = await tutor.post('/api/lessons').send({
     enrollmentId: enrollment.id,
     startsAt: new Date(Date.now() + fixture.lesson.startsInMs).toISOString(),

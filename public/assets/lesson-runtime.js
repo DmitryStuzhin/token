@@ -236,7 +236,7 @@
   }
   function initials(name) { return String(name || '?').split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase(); }
   function nav() {
-    const items = tutor ? [['/tutor.html','◧','Сегодня'],['/lesson.html','▶','Занятие'],['/tutor-check.html','✓','Проверка'],['/students.html','☺','Ученики'],['/groups.html','⛁','Группы'],['/invites.html','⇗','Приглашения'],['/bank.html','▤','Банк задач']]
+    const items = tutor ? [['/tutor.html','⌂','Главная'],['/lesson.html','▶','Занятие'],['/tutor-check.html','✓','Проверка'],['/students.html','☺','Ученики'],['/groups.html','⛁','Группы'],['/bank.html','▤','Банк задач']]
       : [['/index.html','◧','Главная'],['/lesson.html','▶','Занятие'],['/homework.html','✎','Д/З'],['/stats.html','▤','Статистика'],['/account.html','◔','Профиль']];
     return `<aside class="lesson-rail" aria-label="Основная навигация"><a class="rail-logo" href="${session.home}" aria-label="Token">T</a><nav>${items.map(item => `<a href="${item[0]}" class="${item[1] === '▶' ? 'active' : ''}" title="${item[2]}">${item[1]}</a>`).join('')}</nav><span class="rail-avatar">${initials(session.user.name)}</span></aside>`;
   }
