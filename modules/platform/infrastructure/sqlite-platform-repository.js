@@ -137,6 +137,160 @@ class SqlitePlatformRepository {
       input.createdAt,
     );
   }
+  updateProfile(userId, role, input) {
+    db.prepare('UPDATE users SET name=?,phone=?,tz=? WHERE id=?').run(
+      input.name,
+      input.phone,
+      input.tz,
+      userId,
+    );
+    if (role === 'student')
+      db.prepare('UPDATE student_profiles SET grade=?,school=? WHERE user_id=?').run(
+        input.grade,
+        input.school,
+        userId,
+      );
+    else
+      db.prepare('UPDATE tutor_profiles SET years_exp=?,rate=?,meeting_url=? WHERE user_id=?').run(
+        input.yearsExp,
+        input.rate,
+        input.meetingUrl,
+        userId,
+      );
+  }
+  updateEnrollment(enrollment, status, reason, actor) {
+    const at = new Date().toISOString();
+    const tx = db.transaction(() => {
+      db.prepare('UPDATE enrollments SET status=?,status_reason=?,ended_at=? WHERE id=?').run(
+        status,
+        reason,
+        status === 'closed' ? at.slice(0, 10) : null,
+        enrollment.id,
+      );
+      db.prepare('INSERT INTO enrollment_history VALUES (?,?,?,?,?,?,?)').run(
+        `eh_${Date.now()}`,
+        enrollment.id,
+        enrollment.status,
+        status,
+        reason,
+        actor,
+        at,
+      );
+    });
+    tx();
+  }
+  updateGroup(group, input) {
+    return db
+      .prepare('UPDATE groups SET title=?,level=?,schedule=?,capacity=?,status=? WHERE id=?')
+      .run(input.title, input.level, input.schedule, input.capacity, input.status, group.id);
+  }
+  updateGroupMember(groupId, studentId, status, policy) {
+    return db
+      .prepare(
+        'UPDATE group_members SET status=?,old_assignments_policy=? WHERE group_id=? AND student_id=?',
+      )
+      .run(status, policy, groupId, studentId);
+  }
+  lessonConflicts(tutorId, startsAt, durationMin, studentIds, exceptId = null) {
+    const end = new Date(new Date(startsAt).getTime() + durationMin * 60000).toISOString();
+    const tutor = db
+      .prepare(
+        "SELECT id FROM lessons WHERE tutor_id=? AND id<>IFNULL(?, '') AND status='planned' AND starts_at < ? AND datetime(starts_at,'+'||duration_min||' minutes') > ? LIMIT 1",
+      )
+      .get(tutorId, exceptId, end, startsAt);
+    if (tutor) return tutor;
+    for (const sid of studentIds) {
+      const hit = db
+        .prepare(
+          "SELECT l.id FROM lessons l LEFT JOIN enrollments e ON e.id=l.enrollment_id LEFT JOIN group_members gm ON gm.group_id=l.group_id AND gm.status='active' WHERE l.id<>IFNULL(?, '') AND l.status='planned' AND (e.student_id=? OR gm.student_id=?) AND l.starts_at < ? AND datetime(l.starts_at,'+'||l.duration_min||' minutes') > ? LIMIT 1",
+        )
+        .get(exceptId, sid, sid, end, startsAt);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  updateLessonSchedule(lesson, input) {
+    return db
+      .prepare(
+        'UPDATE lessons SET starts_at=?,duration_min=?,status=?,status_reason=?,original_starts_at=IFNULL(original_starts_at,starts_at),version=version+1 WHERE id=? AND version=?',
+      )
+      .run(
+        input.startsAt,
+        input.durationMin,
+        input.status,
+        input.reason,
+        lesson.id,
+        lesson.version,
+      );
+  }
+  setAttendance(lessonId, studentId, status) {
+    return db
+      .prepare(
+        'INSERT INTO lesson_attendance(lesson_id,student_id,status) VALUES(?,?,?) ON CONFLICT(lesson_id,student_id) DO UPDATE SET status=excluded.status',
+      )
+      .run(lessonId, studentId, status);
+  }
+  updateAssignment(assignment, input) {
+    return db
+      .prepare(
+        'UPDATE assignments SET title=?,opens_at=?,due_at=?,late_policy=?,status=?,version=version+1 WHERE id=? AND version=?',
+      )
+      .run(
+        input.title,
+        input.opensAt,
+        input.dueAt,
+        input.latePolicy,
+        input.status,
+        assignment.id,
+        assignment.version,
+      );
+  }
+  findAssignment(id) {
+    return db.prepare('SELECT * FROM assignments WHERE id=?').get(id) || null;
+  }
+  returnAttempt(attempt, input) {
+    db.prepare(
+      "UPDATE attempts SET status='returned',review_comment=?,reviewed_by=?,reviewed_at=?,rubric=?,rubric_scores=?,version=version+1 WHERE id=? AND version=?",
+    ).run(
+      input.comment,
+      input.reviewedBy,
+      input.reviewedAt,
+      JSON.stringify(input.rubric || []),
+      JSON.stringify(input.rubricScores || {}),
+      attempt.id,
+      attempt.version,
+    );
+    return { changes: 1 };
+  }
+  saveGoal(input) {
+    db.prepare(
+      'INSERT INTO goals(student_id,subject_id,target_score,exam_date) VALUES(?,?,?,?) ON CONFLICT(student_id,subject_id) DO UPDATE SET target_score=excluded.target_score,exam_date=excluded.exam_date',
+    ).run(input.studentId, input.subjectId, input.targetScore, input.examDate);
+  }
+  createMockExam(input) {
+    db.prepare(
+      'INSERT INTO mock_exams(id,student_id,subject_id,variant,date,items,scale_version) VALUES(?,?,?,?,?,?,?)',
+    ).run(
+      input.id,
+      input.studentId,
+      input.subjectId,
+      input.variant,
+      input.date,
+      JSON.stringify(input.items),
+      input.scaleVersion,
+    );
+  }
+  findMockExam(id) {
+    return db.prepare('SELECT * FROM mock_exams WHERE id=?').get(id) || null;
+  }
+  updateMockExam(input) {
+    return db
+      .prepare('UPDATE mock_exams SET variant=?,date=?,items=?,scale_version=? WHERE id=?')
+      .run(input.variant, input.date, JSON.stringify(input.items), input.scaleVersion, input.id);
+  }
+  deleteMockExam(id) {
+    return db.prepare('DELETE FROM mock_exams WHERE id=?').run(id);
+  }
 
   inviteCodeExists(code) {
     return !!db.prepare('SELECT id FROM invites WHERE code = ?').get(code);
@@ -213,8 +367,8 @@ class SqlitePlatformRepository {
   }
   createLesson(input) {
     db.prepare(
-      `INSERT INTO lessons (id,subject_id,tutor_id,enrollment_id,group_id,starts_at,duration_min,status,links,task_ids,note)
-                VALUES (?,?,?,?,?,?,?, 'planned','[]','[]',NULL)`,
+      `INSERT INTO lessons (id,subject_id,tutor_id,enrollment_id,group_id,starts_at,duration_min,status,links,task_ids,note,recurrence_id,recurrence_rule)
+                VALUES (?,?,?,?,?,?,?, 'planned','[]','[]',NULL,?,?)`,
     ).run(
       input.id,
       input.subjectId,
@@ -223,6 +377,8 @@ class SqlitePlatformRepository {
       input.groupId,
       input.startsAt,
       input.durationMin,
+      input.recurrenceId || null,
+      input.recurrenceRule ? JSON.stringify(input.recurrenceRule) : null,
     );
   }
   updateLessonLinks(lesson, links) {

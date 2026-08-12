@@ -20,6 +20,11 @@ const Policy = require('../modules/identity/application/access-policy.js');
 const router = express.Router();
 const now = () => new Date().toISOString();
 const uid = A.uid;
+const inviteCode = () => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const part = () => Array.from({ length:4 }, () => alphabet[Math.floor(Math.random()*alphabet.length)]).join('');
+  return `${part()}-${part()}`;
+};
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 const repository = req => req.app.locals.repository;
 
@@ -176,6 +181,14 @@ router.get('/auth/me', (req, res) => {
   res.json({ user:{ id:req.user.id, role:req.user.role, name:req.user.name, email:req.user.email },
              home:A.ROLES[req.user.role].home });
 });
+
+router.put('/profile', A.requireUser, asyncRoute(async (req,res)=>{
+  const b=req.body||{}; const name=String(b.name||'').trim();
+  if(name.length<2) return res.status(400).json({error:'Имя должно содержать минимум 2 символа'});
+  const tz=String(b.tz||'Europe/Moscow'); try{Intl.DateTimeFormat('ru',{timeZone:tz});}catch{return res.status(400).json({error:'Неизвестный часовой пояс'});}
+  const input={name,phone:String(b.phone||'').slice(0,50),tz,grade:+b.grade||null,school:String(b.school||'').slice(0,300),yearsExp:+b.yearsExp||0,rate:+b.rate||0,meetingUrl:String(b.meetingUrl||'').slice(0,2000)};
+  await repository(req).updateProfile(req.user.id,req.user.role,input); res.json({ok:true});
+}));
 
 /* ── банк задач ──────────────────────────────────────────────────── */
 router.get('/tasks', A.requireUser, asyncRoute(async (req, res) => {
@@ -344,6 +357,10 @@ router.post('/groups', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   });
   res.json({ ok:true, id });
 }));
+router.put('/groups/:id',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const g=await repository(req).findGroup(req.params.id);if(!Policy.owns(req.tutorId,g,'tutor_id'))return res.status(403).json({error:'Это не ваша группа'});const b=req.body||{};const input={title:String(b.title||g.title).trim(),level:String(b.level??g.level??''),schedule:String(b.schedule??g.schedule??''),capacity:+b.capacity||g.capacity,status:['recruiting','active','closed'].includes(b.status)?b.status:g.status};const active=(await repository(req).activeGroupStudentIds(g.id)).length;if(input.capacity<active)return res.status(400).json({error:'Вместимость меньше текущего состава'});await repository(req).updateGroup(g,input);res.json({ok:true});}));
+router.put('/groups/:id/members/:studentId',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const g=await repository(req).findGroup(req.params.id);if(!Policy.owns(req.tutorId,g,'tutor_id'))return res.status(403).json({error:'Это не ваша группа'});const status=['waiting','active','left','removed'].includes(req.body?.status)?req.body.status:null;if(!status)return res.status(400).json({error:'Некорректный статус'});const policy=['none','from_join_date','all'].includes(req.body?.oldAssignmentsPolicy)?req.body.oldAssignmentsPolicy:'from_join_date';await repository(req).updateGroupMember(g.id,req.params.studentId,status,policy);res.json({ok:true});}));
+router.put('/enrollments/:id',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const e=await repository(req).findEnrollment(req.params.id);if(!Policy.owns(req.tutorId,e,'tutor_id'))return res.status(403).json({error:'Это не ваша привязка'});const status=['active','paused','closed'].includes(req.body?.status)?req.body.status:null;if(!status)return res.status(400).json({error:'Некорректный статус'});await repository(req).updateEnrollment(e,status,String(req.body?.reason||'').slice(0,500),req.user.id);res.json({ok:true});}));
+router.post('/students/import',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const rows=Array.isArray(req.body?.students)?req.body.students:[];if(!rows.length||rows.length>500)return res.status(400).json({error:'Передайте от 1 до 500 учеников'});const seen=new Set(),errors=[],normalized=[];for(let i=0;i<rows.length;i++){const name=String(rows[i]?.name||'').trim(),email=String(rows[i]?.email||'').trim().toLowerCase(),subjectId=String(rows[i]?.subjectId||'');if(name.length<2)errors.push({row:i+1,field:'name',message:'Слишком короткое имя'});if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))errors.push({row:i+1,field:'email',message:'Некорректный email'});if(seen.has(email))errors.push({row:i+1,field:'email',message:'Дубликат в файле'});seen.add(email);if(!await repository(req).subjectExists(subjectId))errors.push({row:i+1,field:'subjectId',message:'Неизвестный предмет'});normalized.push({name,email,subjectId,grade:+rows[i]?.grade||null});}if(req.body?.dryRun!==false||errors.length)return res.status(errors.length?422:200).json({ok:!errors.length,dryRun:true,count:normalized.length,errors,students:normalized});const invites=[];for(const row of normalized){let code;do code=inviteCode();while(await repository(req).inviteCodeExists(code));const invite=await repository(req).createInvite({id:uid('inv'),code,kind:'enrollment',tutorId:req.tutorId,subjectId:row.subjectId,groupId:null,createdBy:req.user.id,createdAt:now(),expiresAt:null,maxUses:1,note:`Импорт: ${row.name} <${row.email}>`});invites.push({name:row.name,email:row.email,code:invite.code});}res.json({ok:true,dryRun:false,count:invites.length,invites});}));
 
 /* ── занятия ─────────────────────────────────────────────────────── */
 router.post('/lessons', A.requireRole('tutor'), asyncRoute(async (req, res) => {
@@ -359,14 +376,13 @@ router.post('/lessons', A.requireRole('tutor'), asyncRoute(async (req, res) => {
     if (!Policy.owns(req.tutorId,g,'tutor_id')) return res.status(403).json({ error:'Это не ваша группа' });
     subjectId = g.subject_id;
   } else return res.status(400).json({ error:'Укажите ученика или группу' });
-  const id = uid('l');
-  await repository(req).createLesson({
-    id, subjectId, tutorId:req.tutorId, enrollmentId:enrollmentId || null,
-    groupId:groupId || null, startsAt:new Date(startsAt).toISOString(),
-    durationMin:+durationMin || 60,
-  });
-  res.json({ ok:true, id });
+  const first=new Date(startsAt), count=Math.min(104,Math.max(1,+req.body?.recurrence?.count||1)), interval=Math.min(52,Math.max(1,+req.body?.recurrence?.intervalWeeks||1));
+  const students=enrollmentId?[(await repository(req).findEnrollment(enrollmentId)).student_id]:await repository(req).activeGroupStudentIds(groupId);
+  const ids=[]; for(let i=0;i<count;i++){const at=new Date(first.getTime()+i*interval*7*86400000).toISOString();if(await repository(req).lessonConflicts(req.tutorId,at,+durationMin||60,students))return res.status(409).json({error:`Конфликт расписания: ${at}`});const id=uid('l');await repository(req).createLesson({id,subjectId,tutorId:req.tutorId,enrollmentId:enrollmentId||null,groupId:groupId||null,startsAt:at,durationMin:+durationMin||60,recurrenceId:count>1?(ids[0]||id):null,recurrenceRule:count>1?{intervalWeeks:interval,count}:null});ids.push(id);}
+  res.json({ok:true,id:ids[0],ids});
 }));
+router.put('/lessons/:id/schedule',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const l=await tutorOwnsLesson(req,req.params.id);if(!l)return res.status(403).json({error:'Это не ваше занятие'});const startsAt=new Date(req.body?.startsAt).toISOString(),durationMin=+req.body?.durationMin||l.duration_min;const students=await studentsOfLessonRow(req,l);if(await repository(req).lessonConflicts(req.tutorId,startsAt,durationMin,students,l.id))return res.status(409).json({error:'Конфликт расписания'});await repository(req).updateLessonSchedule(l,{startsAt,durationMin,status:req.body?.status||'moved',reason:String(req.body?.reason||'').slice(0,500)});res.json({ok:true});}));
+router.put('/lessons/:id/attendance/:studentId',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const l=await tutorOwnsLesson(req,req.params.id);if(!l)return res.status(403).json({error:'Это не ваше занятие'});const allowed=await studentsOfLessonRow(req,l);if(!allowed.includes(req.params.studentId))return res.status(400).json({error:'Ученик не относится к занятию'});const status=['present','absent','moved'].includes(req.body?.status)?req.body.status:null;if(!status)return res.status(400).json({error:'Некорректная посещаемость'});await repository(req).setAttendance(l.id,req.params.studentId,status);res.json({ok:true});}));
 
 router.post('/lessons/:id/links', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   const l = await tutorOwnsLesson(req, req.params.id);
@@ -505,6 +521,7 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
   if (lessonId) req.app.locals.live.invalidate(lessonId, 'assignment_changed');
   res.json({ ok:true, id });
 }));
+router.put('/assignments/:id',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const a=await repository(req).findAssignment(req.params.id);if(!a)return res.status(404).json({error:'Д/З не найдено'});const owned=a.enrollment_id?Policy.owns(req.tutorId,await repository(req).findEnrollment(a.enrollment_id),'tutor_id'):Policy.owns(req.tutorId,await repository(req).findGroup(a.group_id),'tutor_id');if(!owned)return res.status(403).json({error:'Это не ваше Д/З'});const status=req.body?.status||a.status;transitionAssignment(a.status,status);await repository(req).updateAssignment(a,{title:String(req.body?.title||a.title),opensAt:req.body?.opensAt||a.opensAt||null,dueAt:req.body?.dueAt||a.dueAt,latePolicy:req.body?.latePolicy||a.latePolicy||'allow',status});res.json({ok:true});}));
 
 /* ── попытки ─────────────────────────────────────────────────────── */
 router.post('/practice/:taskId', A.requireRole('student'), asyncRoute(async (req, res) => {
@@ -639,6 +656,13 @@ router.post('/attempts/:id/review', A.requireRole('tutor'), asyncRoute(async (re
   await req.app.locals.live.push(a.lesson_id, a.student_id);
   res.json({ ok:true });
 }));
+router.post('/attempts/:id/return',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const a=await repository(req).findAttempt(req.params.id);if(!a)return res.status(404).json({error:'Работа не найдена'});if(!await Policy.ownedStudent(repository(req),req.tutorId,a.student_id))return res.status(403).json({error:'Это не ваш ученик'});transitionAttempt(a.status,'returned');await repository(req).returnAttempt(a,{comment:String(req.body?.comment||'').slice(0,2000),rubric:req.body?.rubric||[],rubricScores:req.body?.rubricScores||{},reviewedBy:req.tutorId,actorUserId:req.user.id,reviewedAt:now()});res.json({ok:true});}));
+router.post('/attempts/bulk-review',A.requireRole('tutor'),asyncRoute(async(req,res)=>{const ids=[...new Set(req.body?.attemptIds||[])];if(!ids.length||ids.length>100)return res.status(400).json({error:'Выберите от 1 до 100 работ'});for(const id of ids){const a=await repository(req).findAttempt(id);if(!a||!await Policy.ownedStudent(repository(req),req.tutorId,a.student_id))return res.status(403).json({error:'В списке есть чужая работа'});}for(const id of ids){const a=await repository(req).findAttempt(id);transitionAttempt(a.status,'checked');await repository(req).reviewAttempt(a,{isCorrect:+req.body.score>0,score:+req.body.score||0,comment:String(req.body.comment||''),reviewedBy:req.tutorId,reviewedAt:now()});}res.json({ok:true,count:ids.length});}));
+
+router.put('/goals/:studentId/:subjectId',A.requireUser,asyncRoute(async(req,res)=>{const studentId=req.user.role==='student'?req.studentId:req.params.studentId;if(req.user.role==='tutor'&&!await repository(req).tutorOwnsStudentSubject(req.tutorId,studentId,req.params.subjectId))return res.status(403).json({error:'Это не ваш ученик'});const score=+req.body?.targetScore;if(score<0||score>100)return res.status(400).json({error:'Цель должна быть от 0 до 100'});await repository(req).saveGoal({studentId,subjectId:req.params.subjectId,targetScore:score,examDate:req.body?.examDate||null});res.json({ok:true});}));
+router.post('/mock-exams',A.requireUser,asyncRoute(async(req,res)=>{const studentId=req.user.role==='student'?req.studentId:req.body?.studentId;if(req.user.role==='tutor'&&!await repository(req).tutorOwnsStudentSubject(req.tutorId,studentId,req.body?.subjectId))return res.status(403).json({error:'Это не ваш ученик'});const input={id:uid('mx'),studentId,subjectId:req.body.subjectId,variant:String(req.body.variant||''),date:new Date(req.body.date||Date.now()).toISOString(),items:Array.isArray(req.body.items)?req.body.items:[],scaleVersion:String(req.body.scaleVersion||'v1')};await repository(req).createMockExam(input);res.json({ok:true,id:input.id});}));
+router.put('/mock-exams/:id',A.requireUser,asyncRoute(async(req,res)=>{const exam=await repository(req).findMockExam(req.params.id);if(!exam)return res.status(404).json({error:'Пробник не найден'});const studentId=exam.student_id||exam.studentId,subjectId=exam.subject_id||exam.subjectId;if(req.user.role==='student'&&studentId!==req.studentId)return res.status(403).json({error:'Это не ваш пробник'});if(req.user.role==='tutor'&&!await repository(req).tutorOwnsStudentSubject(req.tutorId,studentId,subjectId))return res.status(403).json({error:'Это не ваш ученик'});await repository(req).updateMockExam({id:req.params.id,variant:String(req.body.variant||''),date:new Date(req.body.date).toISOString(),items:req.body.items||[],scaleVersion:String(req.body.scaleVersion||'v1')});res.json({ok:true});}));
+router.delete('/mock-exams/:id',A.requireUser,asyncRoute(async(req,res)=>{const exam=await repository(req).findMockExam(req.params.id);if(!exam)return res.status(404).json({error:'Пробник не найден'});const studentId=exam.student_id||exam.studentId,subjectId=exam.subject_id||exam.subjectId;if(req.user.role==='student'&&studentId!==req.studentId)return res.status(403).json({error:'Это не ваш пробник'});if(req.user.role==='tutor'&&!await repository(req).tutorOwnsStudentSubject(req.tutorId,studentId,subjectId))return res.status(403).json({error:'Это не ваш ученик'});await repository(req).deleteMockExam(req.params.id);res.json({ok:true});}));
 
 /* ── уведомления ─────────────────────────────────────────────────── */
 router.post('/prefs', A.requireUser, asyncRoute(async (req, res) => {

@@ -9,7 +9,7 @@
     const body = `
       <div class="cols c2">
         <section class="card">
-          <div class="head"><h2>Личные данные</h2></div>
+          <div class="head"><h2>Личные данные</h2><button class="btn ghost sm" id="edit-tutor">Редактировать</button></div>
           <div class="field"><div class="k">ФИО</div><div class="v">${UI.esc(ses.user.name)}</div></div>
           <div class="field"><div class="k">Email</div><div class="v">${UI.esc(ses.user.email)}</div></div>
           <div class="field"><div class="k">Телефон</div><div class="v">${UI.esc(ses.user.phone || '—')}</div></div>
@@ -29,6 +29,15 @@
       active: 'account',
       head: { title:'Профиль', sub:'Данные вашего аккаунта', actions:'<a class="btn ghost" href="/tutor.html">На главную</a>' },
       body,
+    });
+    document.getElementById('edit-tutor').addEventListener('click', async () => {
+      const name=prompt('ФИО',ses.user.name); if(name===null)return;
+      const phone=prompt('Телефон',ses.user.phone||''); if(phone===null)return;
+      const tz=prompt('Часовой пояс',ses.user.tz||'Europe/Moscow'); if(tz===null)return;
+      const yearsExp=prompt('Опыт, лет',prof.yearsExp||0); if(yearsExp===null)return;
+      const rate=prompt('Базовая стоимость занятия',prof.rate||0); if(rate===null)return;
+      const meetingUrl=prompt('Ссылка для занятий',prof.meetingUrl||''); if(meetingUrl===null)return;
+      await Api.updateProfile({name,phone,tz,yearsExp:+yearsExp,rate:+rate,meetingUrl}); location.reload();
     });
     return;
   }
@@ -156,9 +165,14 @@
     }));
 
   const ed = document.getElementById('edit');
-  if (ed) ed.addEventListener('click', e => {
+  if (ed) ed.addEventListener('click', async e => {
     e.preventDefault();
-    alert('В прототипе форма редактирования не собрана: поля читаются из users / studentProfiles в assets/db.js.');
+    const name=prompt('ФИО',me.name); if(name===null)return;
+    const phone=prompt('Телефон',me.phone||''); if(phone===null)return;
+    const tz=prompt('Часовой пояс',me.tz||'Europe/Moscow'); if(tz===null)return;
+    const grade=prompt('Класс',prof.grade||''); if(grade===null)return;
+    const school=prompt('Школа',prof.school||''); if(school===null)return;
+    await Api.updateProfile({name,phone,tz,grade:+grade,school}); location.reload();
   });
 
   async function loadSessions() {
