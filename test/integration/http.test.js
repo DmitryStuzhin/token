@@ -43,6 +43,14 @@ test('guest cannot receive cabinet markup', async () => {
   assert.equal(response.headers.location, '/login.html?next=index.html%3Fsubject%3Dinf');
 });
 
+test('guest can read legal documents before giving consent', async () => {
+  for (const path of ['/privacy.html', '/terms.html']) {
+    const response = await request(app).get(path);
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Версия от 13 августа 2026 года/);
+  }
+});
+
 test('student session cannot execute tutor commands or see reference answers', async () => {
   const student = request.agent(app);
   await registerAndLogin(student, {
