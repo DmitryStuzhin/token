@@ -15,6 +15,7 @@ const { domainEvent } = require('../modules/shared/application/event-factory.ts'
 const { transitionInvite } = require('../modules/relationships/domain/invite.ts');
 const { transitionAssignment } = require('../modules/learning/domain/assignment.ts');
 const { transitionAttempt, clampActiveSeconds } = require('../modules/learning/domain/attempt.ts');
+const Policy = require('../modules/identity/application/access-policy.js');
 
 const router = express.Router();
 const now = () => new Date().toISOString();
@@ -37,7 +38,7 @@ async function fullCore(req) {
 
 /* ── вспомогательное: доступ репетитора к сущностям ──────────────── */
 function tutorOwnsLesson(req, lessonId) {
-  return repository(req).findOwnedLesson(req.tutorId, lessonId);
+  return Policy.ownedLesson(repository(req), req.tutorId, lessonId);
 }
 function studentsOfLessonRow(req, lesson) {
   return repository(req).studentsOfLesson(lesson);
@@ -227,7 +228,7 @@ router.post('/invites', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   let subj = subjectId;
   if (kind === 'group') {
     const g = await repository(req).findGroup(groupId);
-    if (!g || g.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваша группа' });
+    if (!Policy.owns(req.tutorId,g,'tutor_id')) return res.status(403).json({ error:'Это не ваша группа' });
     subj = g.subject_id;
   }
   if (!await repository(req).subjectExists(subj)) return res.status(400).json({ error:'Неизвестный предмет' });
@@ -251,7 +252,7 @@ router.post('/invites', A.requireRole('tutor'), asyncRoute(async (req, res) => {
 
 router.post('/invites/:id/revoke', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   const inv = await repository(req).findInvite(req.params.id);
-  if (!inv || inv.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваше приглашение' });
+  if (!Policy.owns(req.tutorId,inv,'tutor_id')) return res.status(403).json({ error:'Это не ваше приглашение' });
   transitionInvite(inv.status, 'revoked');
   assertUpdated(
     await repository(req).revokeInvite(inv),
@@ -351,11 +352,11 @@ router.post('/lessons', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   let subjectId = null;
   if (enrollmentId) {
     const e = await repository(req).findEnrollment(enrollmentId);
-    if (!e || e.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваш ученик' });
+    if (!Policy.owns(req.tutorId,e,'tutor_id')) return res.status(403).json({ error:'Это не ваш ученик' });
     subjectId = e.subject_id;
   } else if (groupId) {
     const g = await repository(req).findGroup(groupId);
-    if (!g || g.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваша группа' });
+    if (!Policy.owns(req.tutorId,g,'tutor_id')) return res.status(403).json({ error:'Это не ваша группа' });
     subjectId = g.subject_id;
   } else return res.status(400).json({ error:'Укажите ученика или группу' });
   const id = uid('l');
@@ -463,11 +464,11 @@ router.post('/assignments', A.requireRole('tutor'), asyncRoute(async (req, res) 
   let subjectId = null, students = [];
   if (enrollmentId) {
     const e = await repository(req).findEnrollment(enrollmentId);
-    if (!e || e.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваш ученик' });
+    if (!Policy.owns(req.tutorId,e,'tutor_id')) return res.status(403).json({ error:'Это не ваш ученик' });
     subjectId = e.subject_id; students = [e.student_id];
   } else if (groupId) {
     const g = await repository(req).findGroup(groupId);
-    if (!g || g.tutor_id !== req.tutorId) return res.status(403).json({ error:'Это не ваша группа' });
+    if (!Policy.owns(req.tutorId,g,'tutor_id')) return res.status(403).json({ error:'Это не ваша группа' });
     subjectId = g.subject_id;
     students = await repository(req).activeGroupStudentIds(groupId);
   } else return res.status(400).json({ error:'Укажите ученика или группу' });
@@ -518,7 +519,7 @@ router.post('/practice/:taskId', A.requireRole('student'), asyncRoute(async (req
 async function ownAttempt(req, res) {
   const a = await repository(req).findAttempt(req.params.id);
   if (!a) { res.status(404).json({ error:'Попытка не найдена' }); return null; }
-  if (a.student_id !== req.studentId) { res.status(403).json({ error:'Это чужая работа' }); return null; }
+  if (!Policy.ownAttempt(req.studentId,a)) { res.status(403).json({ error:'Это чужая работа' }); return null; }
   return a;
 }
 
@@ -619,7 +620,7 @@ router.post('/attempts/:id/submit', A.requireRole('student'), asyncRoute(async (
 router.post('/attempts/:id/review', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   const a = await repository(req).findAttempt(req.params.id);
   if (!a) return res.status(404).json({ error:'Работа не найдена' });
-  const mine = await repository(req).tutorOwnsStudent(req.tutorId, a.student_id);
+  const mine = await Policy.ownedStudent(repository(req),req.tutorId,a.student_id);
   if (!mine) return res.status(403).json({ error:'Это не ваш ученик' });
 
   const score = Math.max(0, Math.min(10, +(req.body || {}).score || 0));
