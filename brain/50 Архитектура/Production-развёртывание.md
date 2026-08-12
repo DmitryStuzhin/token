@@ -38,6 +38,12 @@ tags: [тип/архитектура, статус/в-работе]
   миграция `006_lesson_note_parent_visibility.sql` применена. После выкладки
   app/PostgreSQL/Caddy healthy, `/health/live` и `/health/ready` отвечают `200`,
   email probe — `ok`, публичные JS/CSS содержат runtime 1a.
+- 2026-08-13 этап 4 полностью выложен коммитами `9bb5aaf` и `90719bc`:
+  deny-by-default policies, role/resource/action matrix, object-level tests,
+  audit предметных операций и версионированные согласия. Применена миграция
+  `007_user_consents.sql`; `/privacy.html` и `/terms.html` доступны до входа.
+  Резервная точка перед релизом: `/opt/token/.deploy-backups/20260812-214110`.
+  После релиза app/PostgreSQL/Caddy healthy, live/ready и email probe — `ok`.
 
 ## Как выкатывается код
 
