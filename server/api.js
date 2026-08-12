@@ -393,6 +393,19 @@ router.delete('/lessons/:id/links/:index', A.requireRole('tutor'), asyncRoute(as
   res.json({ ok:true, links });
 }));
 
+router.put('/lessons/:id/note', A.requireRole('tutor'), asyncRoute(async (req, res) => {
+  const lesson = await tutorOwnsLesson(req, req.params.id);
+  if (!lesson) return res.status(403).json({ error:'Это не ваше занятие' });
+  const text = String((req.body || {}).text || '').trim();
+  const visibility = ['private','student','parent'].includes((req.body || {}).visibility)
+    ? req.body.visibility : 'private';
+  if (text.length > 5000) return res.status(400).json({ error:'Заметка длиннее 5000 символов' });
+  const note = { text, visibility, authorUserId:req.user.id, updatedAt:now() };
+  assertUpdated(await repository(req).updateLessonNote(lesson, note), 'Lesson', lesson.id);
+  req.app.locals.live.invalidate(lesson.id, 'note_changed');
+  res.json({ ok:true, note });
+}));
+
 router.post('/lessons/:id/tasks', A.requireRole('tutor'), asyncRoute(async (req, res) => {
   const l = await tutorOwnsLesson(req, req.params.id);
   if (!l) return res.status(403).json({ error:'Это не ваше занятие' });
