@@ -216,7 +216,9 @@ test('production lesson keeps roles, realtime editing and statistics consistent'
   ).toBeTruthy();
   const groupLessonResponse = await post(tutorContext.request, '/api/v1/lessons', {
     groupId: group.id,
-    startsAt: new Date(Date.now() + 120_000).toISOString(),
+    // The tutor already has the individual 60-minute lesson created above.
+    // Keep this group lesson outside that interval: stage 5 rejects overlaps.
+    startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
     durationMin: 90,
   });
   const groupLesson = await groupLessonResponse.json();
