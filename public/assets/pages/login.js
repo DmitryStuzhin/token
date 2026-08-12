@@ -72,6 +72,10 @@
           <div class="fld"><label>Пароль</label>
             <input id="f-pass" type="password" minlength="10" placeholder="минимум 10 символов" autocomplete="new-password"></div>
           <div id="role-extra"></div>
+          <div class="signup-consents">
+            <label><input id="f-consent-data" type="checkbox"> Я даю <a href="/privacy.html" target="_blank">согласие на обработку персональных данных</a></label>
+            <label><input id="f-consent-terms" type="checkbox"> Я принимаю <a href="/terms.html" target="_blank">условия использования</a></label>
+          </div>
           <button class="btn csp-u-072" id="do-signup">
             Создать аккаунт</button>
         ` : `
@@ -179,6 +183,10 @@
       yearsExp: (document.getElementById('f-exp') || {}).value,
       rate: (document.getElementById('f-rate') || {}).value,
       subjects: [...document.querySelectorAll('.f-subj:checked')].map(x => x.value),
+      consents: {
+        personal_data:document.getElementById('f-consent-data')?.checked ? '2026-08-13' : '',
+        terms:document.getElementById('f-consent-terms')?.checked ? '2026-08-13' : '',
+      },
     };
     if (btn) btn.disabled = true;
     try {

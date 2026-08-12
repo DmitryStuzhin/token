@@ -490,6 +490,12 @@ export interface components {
             password: string;
             /** @enum {string} */
             role: "student" | "tutor";
+            consents: {
+                /** @enum {string} */
+                personal_data: "2026-08-13";
+                /** @enum {string} */
+                terms: "2026-08-13";
+            };
             grade?: number;
             school?: string;
             subjects?: string[];
