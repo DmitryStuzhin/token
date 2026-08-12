@@ -6,7 +6,10 @@ const assert = require('node:assert/strict');
  * помощник не читает почту.
  */
 async function registerAndLogin(agent, data, prefix = '/api') {
-  const registration = await agent.post(`${prefix}/auth/register`).send(data);
+  const registration = await agent.post(`${prefix}/auth/register`).send({
+    consents: { personal_data: '2026-08-13', terms: '2026-08-13' },
+    ...data,
+  });
   assert.equal(registration.status, 201, JSON.stringify(registration.body));
   assert.ok(registration.body.verificationUrl, 'test registration must expose verificationUrl');
   const url = new URL(registration.body.verificationUrl);

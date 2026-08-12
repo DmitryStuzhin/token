@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS security_events (
   user_agent TEXT, metadata TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS user_consents (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  consent_type TEXT NOT NULL, document_version TEXT NOT NULL,
+  accepted_at TEXT NOT NULL, ip TEXT, user_agent TEXT,
+  UNIQUE(user_id, consent_type, document_version));
+CREATE INDEX IF NOT EXISTS idx_user_consents_user ON user_consents(user_id, accepted_at);
+
 CREATE TABLE IF NOT EXISTS student_profiles (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   grade INTEGER, school TEXT, started_at TEXT);

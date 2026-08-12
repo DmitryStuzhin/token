@@ -94,7 +94,10 @@ void test('public HTTP learning flow runs on the PostgreSQL adapter', async () =
       agent: ReturnType<typeof request.agent>,
       data: Record<string, unknown>,
     ) => {
-      const registration = await agent.post('/api/auth/register').send(data);
+      const registration = await agent.post('/api/auth/register').send({
+        consents: { personal_data: '2026-08-13', terms: '2026-08-13' },
+        ...data,
+      });
       assert.equal(registration.status, 201, registration.text);
       const verification = new URL(String(registration.body.verificationUrl));
       assert.equal((await agent.get(verification.pathname + verification.search)).status, 302);

@@ -3,6 +3,7 @@ const { v7: uuidv7 } = require('uuid');
 const argon2 = require('@node-rs/argon2');
 
 const { generateCode, formatCode, normalizeCode } = require('../domain/access-code.js');
+const { CURRENT_CONSENTS, validateConsents } = require('../domain/consent.js');
 
 const SESSION_DAYS = 30;
 const TRUSTED_DEVICE_DAYS = 30;
@@ -173,6 +174,8 @@ class AuthService {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       return { error: 'Похоже, email введён с ошибкой' };
     if (password.length < 10) return { error: 'Пароль — минимум 10 символов' };
+    if (!validateConsents(data.consents))
+      return { error: 'Примите условия использования и согласие на обработку данных' };
     if (!this.roles[role]) return { error: 'Выберите роль' };
     if (!this.roles[role].enabled)
       return { error: `Роль «${this.roles[role].label}» пока недоступна` };
@@ -196,6 +199,14 @@ class AuthService {
       yearsExp: Number(data.yearsExp) || 1,
       rate: Number(data.rate) || 0,
       meetingUrl: String(data.meetingUrl || ''),
+      consents: Object.entries(CURRENT_CONSENTS).map(([type, documentVersion]) => ({
+        id: uuidv7(),
+        type,
+        documentVersion,
+        acceptedAt: createdAt,
+        ip: String(context.ip || '').slice(0, 100),
+        userAgent: String(context.userAgent || '').slice(0, 200),
+      })),
     });
     const delivery = await this.issueToken(user, 'verify_email', context);
     await this.security('account_registered', { ...context, userId: user.id });

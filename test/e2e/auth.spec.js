@@ -8,6 +8,8 @@ function captureJson(page, path) {
 }
 
 async function submitVerifyAndLogin(page, user) {
+  await page.locator('#f-consent-data').check();
+  await page.locator('#f-consent-terms').check();
   const registrationResponse = captureJson(page, '/api/v1/auth/register');
   await page.getByRole('button', { name: 'Создать аккаунт' }).click();
   const registration = await (await registrationResponse).json();
