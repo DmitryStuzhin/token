@@ -44,6 +44,12 @@ tags: [тип/архитектура, статус/в-работе]
   `007_user_consents.sql`; `/privacy.html` и `/terms.html` доступны до входа.
   Резервная точка перед релизом: `/opt/token/.deploy-backups/20260812-214110`.
   После релиза app/PostgreSQL/Caddy healthy, live/ready и email probe — `ok`.
+- 2026-08-13 этапы 4 и 5 объединены с актуальным кабинетом репетитора через
+  защищённый PR №14 (`master` `247b280`). Перед релизом создан дамп PostgreSQL
+  и архив кода в `/opt/token/.deploy-backups/20260812-235034`. Применена
+  `008_learning_core_lifecycle.sql`; app/PostgreSQL/Caddy healthy,
+  `https://tokenapp.ru/health/live` и `/health/ready` отвечают `200`, email
+  readiness — `ok`, публичный UI целей и пробников доступен.
 
 ## Как выкатывается код
 
