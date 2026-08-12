@@ -62,6 +62,7 @@ class AuthService {
     this.publicOrigin = options.publicOrigin || 'http://localhost:3000';
     this.exposeTokens = options.exposeTokens === true;
     this.logger = options.logger || { info() {}, warn() {}, error() {} };
+    this.privilegedRoles = new Set(options.privilegedRoles || ['admin']);
   }
   tokenHash(token) {
     return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -229,7 +230,8 @@ class AuthService {
     // Пароль сошёлся. Дальше решаем, нужен ли второй фактор: на уже доверенном
     // устройстве код спрашивать незачем, иначе ученик перед каждым занятием
     // лезет в почту.
-    if (context.deviceToken) {
+    const privileged = this.privilegedRoles.has(user.role);
+    if (context.deviceToken && !privileged) {
       const trusted = await this.store.touchTrustedDevice(
         user.id,
         this.tokenHash(context.deviceToken),
@@ -248,6 +250,7 @@ class AuthService {
     await this.security('login_code_requested', { ...context, userId: user.id });
     return {
       codeRequired: true,
+      privilegedMfa: privileged,
       challenge: delivery.handle,
       emailHint: maskEmail(user.email),
       delivered: delivery.delivered,
@@ -275,13 +278,17 @@ class AuthService {
     }
     const user = await this.store.findUserById(redeemed.userId);
     if (!user) return { error: 'Код недействителен или истёк' };
-    const device = await this.trustDevice(user.id, context);
+    const privileged = this.privilegedRoles.has(user.role);
+    const device = privileged ? null : await this.trustDevice(user.id, context);
     await this.security('login_succeeded', {
       ...context,
       userId: user.id,
-      metadata: { factor: 'email_code' },
+      metadata: { factor: 'email_code', privilegedMfa: privileged },
     });
-    return { user, deviceToken: device.token, deviceExpires: device.expires };
+    return {
+      user,
+      ...(device ? { deviceToken: device.token, deviceExpires: device.expires } : {}),
+    };
   }
   async resendLoginCode(challenge, context = {}) {
     const now = new Date().toISOString();

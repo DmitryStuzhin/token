@@ -91,7 +91,8 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   if (r.codeRequired) {
     return res.status(202).json({
       ok:true, codeRequired:true, challenge:r.challenge, emailHint:r.emailHint,
-      emailSent:r.delivered !== false, ...(r.code ? { code:r.code } : {}),
+      emailSent:r.delivered !== false, privilegedMfa:r.privilegedMfa === true,
+      ...(r.code ? { code:r.code } : {}),
     });
   }
   res.json(await grantSession(req, res, r.user));
@@ -101,7 +102,7 @@ router.post('/auth/login/code', asyncRoute(async (req, res) => {
   const { challenge, code } = req.body || {};
   const r = await req.app.locals.auth.completeLogin(challenge, code, authContext(req));
   if (r.error) return res.status(400).json({ error:r.error, attemptsLeft:r.attemptsLeft });
-  A.setDeviceCookie(res, r.deviceToken, r.deviceExpires);
+  if (r.deviceToken) A.setDeviceCookie(res, r.deviceToken, r.deviceExpires);
   res.json(await grantSession(req, res, r.user));
 }));
 
