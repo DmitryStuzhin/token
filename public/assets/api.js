@@ -69,6 +69,11 @@ window.Api = (function () {
 
     /* группы и занятия */
     createGroup: data => post('/groups', data),
+    updateProfile: data => call('PUT','/profile',data),
+    updateGroup: (id,data) => call('PUT','/groups/'+encodeURIComponent(id),data),
+    updateGroupMember: (id,studentId,data) => call('PUT','/groups/'+encodeURIComponent(id)+'/members/'+encodeURIComponent(studentId),data),
+    updateEnrollment: (id,data) => call('PUT','/enrollments/'+encodeURIComponent(id),data),
+    importStudents: data => post('/students/import',data),
     setStudentRate: (studentId, subjectId, rate) => post('/student-rates/' + encodeURIComponent(studentId), { subjectId, rate }),
     createLesson: data => post('/lessons', data),
     addLink: (lessonId, link) => post('/lessons/' + lessonId + '/links', link),
@@ -77,9 +82,12 @@ window.Api = (function () {
     attachTask: (lessonId, taskId) => post('/lessons/' + lessonId + '/tasks', { taskId }),
     detachTask: (lessonId, taskId) => del('/lessons/' + lessonId + '/tasks/' + encodeURIComponent(taskId)),
     setLessonStatus: (lessonId, status) => post('/lessons/' + lessonId + '/status', { status }),
+    rescheduleLesson: (id,data) => call('PUT','/lessons/'+encodeURIComponent(id)+'/schedule',data),
+    setAttendance: (id,studentId,status) => call('PUT','/lessons/'+encodeURIComponent(id)+'/attendance/'+encodeURIComponent(studentId),{status}),
 
     /* задания и работы */
     createAssignment: data => post('/assignments', data),
+    updateAssignment: (id,data) => call('PUT','/assignments/'+encodeURIComponent(id),data),
     startPractice: taskId => post('/practice/' + encodeURIComponent(taskId)),
     progress: (id, code, activeSeconds) => post('/attempts/' + id + '/progress', { code, activeSeconds }),
     progressOnExit: (id, code, activeSeconds) => fetch('/api/v1/attempts/' + encodeURIComponent(id) + '/progress', {
@@ -90,6 +98,12 @@ window.Api = (function () {
     answer: (id, answer, activeSeconds) => post('/attempts/' + id + '/answer', { answer, activeSeconds }),
     submit: (id, code, activeSeconds) => post('/attempts/' + id + '/submit', { code, activeSeconds }),
     review: (id, score, comment) => post('/attempts/' + id + '/review', { score, comment }),
+    returnAttempt: (id,data) => post('/attempts/' + id + '/return',data),
+    bulkReview: data => post('/attempts/bulk-review',data),
+    saveGoal: (studentId,subjectId,data) => call('PUT','/goals/'+encodeURIComponent(studentId)+'/'+encodeURIComponent(subjectId),data),
+    createMockExam: data => post('/mock-exams',data),
+    updateMockExam: (id,data) => call('PUT','/mock-exams/'+encodeURIComponent(id),data),
+    deleteMockExam: id => del('/mock-exams/'+encodeURIComponent(id)),
 
     /* прочее */
     importTasks: tasks => post('/tasks/import', { tasks }),
