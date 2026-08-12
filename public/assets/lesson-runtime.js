@@ -37,6 +37,8 @@
   let liveSequence = 0;
   let socketEverOpened = false;
   let homeworkNotice = '';
+  let tutorDockTab = localStorage.getItem('token.lesson.tutorDock') || 'student';
+  let statementCollapsed = localStorage.getItem('token.lesson.statementCollapsed') === 'true';
   let pythonRunner = null;
   const pythonRequests = new Map();
   const pythonReadyWaiters = [];
@@ -133,24 +135,23 @@
   function taskPanel(task) {
     if (!task) return `<section class="lesson-card expanded-statement">${UI.empty('Задание не выбрано', 'Выберите задачу занятия.')}</section>`;
     const topic = C.topic(task.topicId);
-    return `<section class="lesson-card expanded-statement">
+    return `<section class="lesson-card expanded-statement ${statementCollapsed ? 'collapsed' : ''}">
       <div class="card-head"><h2 class="micro-head">№${task.number} · ${esc(topic && topic.name || subject.name)}</h2>
-        <span class="kind">${task.autoCheck ? 'автопроверка' : 'ручная проверка'}</span></div>
+        <div class="statement-meta"><span class="kind">${task.autoCheck ? 'автопроверка' : 'ручная проверка'}</span><span class="tag">сложность ${task.difficulty}/3</span><button class="collapse-statement" type="button" aria-expanded="${!statementCollapsed}">${statementCollapsed ? '⌄' : '⌃'}</button></div></div>
       <h3>${esc(task.title)}</h3><p>${esc(task.statement)}</p>
-      <div class="tags"><span class="tag">сложность ${task.difficulty}/3</span><span class="tag">${esc(topic && topic.name || subject.name)}</span></div>
     </section>`;
   }
-  function taskList(studentId) {
+  function taskList(studentId, options = {}) {
     const ids = lesson.taskIds || [];
     return `<section class="lesson-card"><div class="card-head"><h2 class="micro-head">Задания занятия</h2>
-      ${tutor ? '<button class="text-action" id="open-task-picker">+ из банка</button>' : ''}</div>
+      ${tutor ? options.rail ? '<button class="text-action open-bank-tab">+ из банка</button>' : '<button class="text-action" id="open-task-picker">+ из банка</button>' : ''}</div>
       <div class="task-list">${ids.length ? ids.map(id => {
         const task = taskOf(id); const state = taskState(C.attemptFor(studentId, id, { lessonId:lesson.id }));
         return `<button class="task-row ${id === selectedTask ? 'selected' : ''}" data-task="${esc(id)}">
           <span class="mark ${state.cls}">${state.mark}</span><span><strong>№${task ? task.number : '?'} · ${esc(task ? task.title : id)}</strong><small>${state.text}</small></span>
           ${tutor ? `<span class="remove-task" data-remove-task="${esc(id)}" aria-label="Убрать задачу">×</span>` : ''}</button>`;
       }).join('') : `<div class="runtime-empty">${tutor ? 'Добавьте первую задачу из банка.' : 'Репетитор пока не добавил задания.'}</div>`}</div>
-      <div id="task-picker-slot"></div></section>`;
+      ${options.rail ? '' : '<div id="task-picker-slot"></div>'}</section>`;
   }
   function linksCard() {
     const links = lesson.links || [];
@@ -186,7 +187,7 @@
     const statusText = pythonStatus?.text || (closed ? 'Работа закрыта' : 'Готово к запуску · Ctrl/⌘ + Enter');
     return `<section class="interactive-editor lesson-card flush" data-attempt="${esc(attempt.id)}" data-task="${esc(task.id)}" data-student="${esc(attempt.studentId)}">
       <header class="editor-toolbar"><div><strong>${title}</strong><span>${closed ? 'работа закрыта' : tutor ? 'живой экран · изменения видит ученик' : 'сохраняется автоматически'}</span></div>
-        <div class="editor-actions">${tutor ? '<button class="laser-button" type="button">Лазер</button>' : ''}<button class="run-code" type="button">▷ Запустить</button></div></header>
+        <div class="editor-actions">${tutor ? '<button class="laser-button" type="button">⌖ Лазер</button><button class="hint-button" type="button">Подсказка</button>' : ''}<button class="run-code" type="button">▷ Запустить</button></div></header>
       <div class="editor-stage"><pre class="code-highlight" aria-hidden="true">${highlight(attempt.code || '')}</pre>
         <textarea class="code-input" spellcheck="false" aria-label="Код решения" ${canEdit ? '' : 'readonly'}>${esc(attempt.code || '')}</textarea>
         <svg class="laser-layer" aria-hidden="true" preserveAspectRatio="none"></svg></div>
@@ -206,9 +207,27 @@
 
   function tutorSolo() {
     const task = taskOf(selectedTask); const attempt = attemptOf(); const student = userOf(selectedStudent);
-    return `<div class="solo-layout"><div class="stack sticky">${taskList(selectedStudent)}</div>
-      <div class="stack">${taskPanel(task)}${editor(task, attempt)}</div>
-      <div class="stack sticky"><section class="lesson-card student-identity"><span class="mini-avatar">${initials(student && student.name)}</span><div><strong>${esc(student && student.name || 'Ученик')}</strong><small>${esc(subject.name)}</small></div></section>${linksCard()}${summaryCard(selectedStudent)}${homeworkCard()}</div></div>`;
+    const panels = {
+      student:`<section class="dock-panel student-panel"><div class="student-identity"><span class="mini-avatar">${initials(student && student.name)}</span><div><strong>${esc(student && student.name || 'Ученик')}</strong><small>${esc(subject.name)}</small></div></div>${studentFacts(selectedStudent)}</section>`,
+      bank:`<section class="dock-panel">${taskList(selectedStudent)}</section>`,
+      stats:`<section class="dock-panel">${summaryCard(selectedStudent)}${topicStats(selectedStudent)}</section>`,
+      notes:`<section class="dock-panel">${noteCard()}${linksCard()}</section>`,
+    };
+    return `<div class="cockpit-layout"><div class="cockpit-primary">${taskPanel(task)}${editor(task, attempt)}<div class="task-rail">${taskList(selectedStudent, { rail:true })}</div></div>
+      <aside class="lesson-dock"><nav class="dock-tabs">${[['student','Ученик'],['bank','Банк'],['stats','Статистика'],['notes','Заметки']].map(([key,label]) => `<button data-dock-tab="${key}" class="${tutorDockTab === key ? 'active' : ''}">${label}</button>`).join('')}</nav><div class="dock-body">${panels[tutorDockTab] || panels.student}</div><div class="dock-homework">${homeworkCard()}</div></aside></div>`;
+  }
+  function studentFacts(studentId) {
+    const profile = C.student(studentId) || {};
+    const previous = C.assignmentsOf(studentId, lesson.subjectId).filter(item => new Date(item.dueAt) < new Date(lesson.startsAt)).pop();
+    return `<dl class="student-facts"><div><dt>Класс</dt><dd>${profile.grade ? `${profile.grade}` : '—'}</dd></div><div><dt>Занятие</dt><dd>${C.lessonsOf(studentId, lesson.subjectId).filter(item => new Date(item.startsAt) <= new Date(lesson.startsAt)).length}-е</dd></div><div><dt>Прошлое Д/З</dt><dd>${previous ? `${previous.done} из ${previous.total}` : 'не выдавалось'}</dd></div></dl>`;
+  }
+  function topicStats(studentId) {
+    const rows = C.topicMastery(studentId, lesson.subjectId).slice(0, 6);
+    return `<section class="lesson-card topic-stats"><h2 class="micro-head">Темы</h2>${rows.length ? rows.map(row => { const topic=C.topic(row.topicId); const pct=row.percent || 0; return `<div class="topic-row"><span>${esc(topic && topic.name || 'Тема')}</span><b>${pct}%</b><progress class="${pct < 50 ? 'low' : pct < 70 ? 'mid' : 'high'}" max="100" value="${pct}" aria-label="Освоение темы: ${pct}%"></progress></div>`; }).join('') : '<div class="runtime-empty">Статистика появится после решений.</div>'}</section>`;
+  }
+  function noteCard() {
+    const note = lesson.note || {};
+    return `<section class="lesson-card lesson-note-card"><div class="card-head"><h2 class="micro-head">Заметки занятия</h2><span id="note-save-state" class="stat-truth"></span></div><div class="quick-notes"><button type="button" data-note-prefix="Ошибка: ">+ ошибка</button><button type="button" data-note-prefix="На повторение: ">+ на повторение</button><button type="button" data-note-prefix="Родителю: ">+ родителю</button></div><textarea id="lesson-note" maxlength="5000" placeholder="Зафиксируйте наблюдение…">${esc(note.text || '')}</textarea><label class="note-visibility">Видимость <select id="note-visibility"><option value="private" ${note.visibility === 'private' ? 'selected' : ''}>только репетитор</option><option value="student" ${note.visibility === 'student' ? 'selected' : ''}>ученик</option><option value="parent" ${note.visibility === 'parent' ? 'selected' : ''}>ученик и родитель</option></select></label></section>`;
   }
   function groupMetrics() {
     const attempts = C.attemptsOfLesson(lesson.id);
@@ -247,7 +266,9 @@
     const tutorAction = !tutor ? '' : completed
       ? '<span class="lesson-completed" role="status">Занятие завершено</span><a class="button primary" href="/tutor.html?new=lesson">Назначить новое</a>'
       : '<button class="button finish-button" id="finish-lesson">Завершить занятие</button>';
-    return `<header class="lesson-head"><div class="lesson-identity"><i class="${completed ? 'done' : C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${esc(subject.name)} · ${who}</strong><span>${C.fmtDateFull(lesson.startsAt)} · ${C.fmtTime(lesson.startsAt)} · ${lesson.durationMin} мин${completed ? ' · завершено' : ''}</span></div></div>
+    const attempts = selectedStudent ? (lesson.taskIds || []).map(id => C.attemptFor(selectedStudent,id,{lessonId:lesson.id})).filter(Boolean) : [];
+    const solved = attempts.filter(item => item.isCorrect).length; const seconds=attempts.reduce((sum,item)=>sum+(item.activeSeconds||0),0);
+    return `<header class="lesson-head"><div class="lesson-identity"><span class="head-avatar">${initials(group ? group.title : (userOf(selectedStudent)||{}).name)}</span><i class="${completed ? 'done' : C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${group ? esc(group.title) : esc((userOf(selectedStudent)||{}).name || subject.name)}</strong><span>${esc(subject.name)} · ${C.fmtDateFull(lesson.startsAt)} · ${lesson.durationMin} мин</span></div></div><div class="header-kpis"><span><small>решено</small><b>${solved}/${(lesson.taskIds||[]).length}</b></span><span><small>активная работа</small><b>${C.fmtDurShort(seconds)}</b></span></div>
       <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
   }
   function render() {
@@ -258,6 +279,10 @@
   }
 
   function bindCommon() {
+    document.querySelector('.collapse-statement')?.addEventListener('click', () => { statementCollapsed=!statementCollapsed; localStorage.setItem('token.lesson.statementCollapsed',String(statementCollapsed)); renderWorkspace(); });
+    document.querySelectorAll('[data-dock-tab]').forEach(button => button.addEventListener('click', () => { tutorDockTab=button.dataset.dockTab; localStorage.setItem('token.lesson.tutorDock',tutorDockTab); renderWorkspace(); }));
+    document.querySelectorAll('.open-bank-tab').forEach(button => button.addEventListener('click', () => { tutorDockTab='bank'; localStorage.setItem('token.lesson.tutorDock',tutorDockTab); renderWorkspace(); }));
+    bindLessonNote();
     document.querySelectorAll('.task-row[data-task]').forEach(button => button.addEventListener('click', event => {
       if (event.target.closest('[data-remove-task]')) return;
       selectedTask = button.dataset.task; renderWorkspace();
@@ -285,6 +310,13 @@
         alert(error.message || 'Не удалось завершить занятие');
       }
     });
+  }
+  function bindLessonNote() {
+    const textarea=document.getElementById('lesson-note'); if(!textarea)return;
+    let timer; const visibility=document.getElementById('note-visibility'); const state=document.getElementById('note-save-state');
+    const save=()=>{clearTimeout(timer);state.textContent='сохраняем…';timer=setTimeout(async()=>{try{await Api.saveLessonNote(lesson.id,{text:textarea.value,visibility:visibility.value});state.textContent='сохранено';}catch(error){state.textContent=error.message;}},500);};
+    textarea.addEventListener('input',save); visibility.addEventListener('change',save);
+    document.querySelectorAll('[data-note-prefix]').forEach(button=>button.addEventListener('click',()=>{textarea.value+=(textarea.value?'\n':'')+button.dataset.notePrefix;textarea.focus();textarea.dispatchEvent(new Event('input'));}));
   }
   function renderWorkspace() {
     const workspace = document.getElementById('lesson-workspace');
@@ -364,6 +396,7 @@
     if (tutor) {
       bindLaser(root);
       textarea.addEventListener('dblclick', () => showHintComposer(root, textarea));
+      root.querySelector('.hint-button')?.addEventListener('click', () => showHintComposer(root, textarea));
     } else {
       root.querySelector('.submit-answer')?.addEventListener('click', () => submitAnswer(root));
       root.querySelector('.submit-code')?.addEventListener('click', () => submitCode(root));

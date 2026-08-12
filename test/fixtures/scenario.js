@@ -7,6 +7,7 @@ const fixture = Object.freeze({
     subjects: ['inf'],
     yearsExp: 5,
     rate: 3000,
+    consents: { personal_data: '2026-08-13', terms: '2026-08-13' },
   }),
   student: Object.freeze({
     name: 'Тестовый Ученик',
@@ -15,6 +16,7 @@ const fixture = Object.freeze({
     role: 'student',
     grade: 11,
     school: 'Тестовая школа',
+    consents: { personal_data: '2026-08-13', terms: '2026-08-13' },
   }),
   secondStudent: Object.freeze({
     name: 'Второй Ученик',
@@ -23,6 +25,7 @@ const fixture = Object.freeze({
     role: 'student',
     grade: 10,
     school: 'Другая школа',
+    consents: { personal_data: '2026-08-13', terms: '2026-08-13' },
   }),
   parentStub: Object.freeze({
     name: 'Тестовый Родитель',

@@ -213,6 +213,14 @@ class SqlitePlatformRepository {
       )
       .run(JSON.stringify(taskIds), lesson.id, lesson.version);
   }
+  updateLessonNote(lesson, note) {
+    return db
+      .prepare(
+        `UPDATE lessons SET note = ?, version = version + 1
+                       WHERE id = ? AND version = ?`,
+      )
+      .run(JSON.stringify(note), lesson.id, lesson.version);
+  }
   removeIssuedAttempt(lessonId, taskId) {
     db.prepare(
       "DELETE FROM attempts WHERE lesson_id = ? AND task_id = ? AND status = 'issued'",

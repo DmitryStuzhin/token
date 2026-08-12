@@ -59,6 +59,22 @@ class PostgresIdentityStore {
           );
         }
       }
+      for (const item of input.consents) {
+        await client.query(
+          `INSERT INTO user_consents
+          (id,user_id,consent_type,document_version,accepted_at,ip,user_agent)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            item.id,
+            input.id,
+            item.type,
+            item.documentVersion,
+            item.acceptedAt,
+            item.ip,
+            item.userAgent,
+          ],
+        );
+      }
       await client.query('COMMIT');
       return this.findUserById(input.id);
     } catch (error) {

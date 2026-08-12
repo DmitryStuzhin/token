@@ -1,7 +1,7 @@
 ---
 aliases: [production deployment, прод, Timeweb]
 tags: [тип/архитектура, статус/в-работе]
-обновлено: 2026-08-11
+обновлено: 2026-08-13
 ---
 
 # Production-развёртывание
@@ -31,6 +31,19 @@ tags: [тип/архитектура, статус/в-работе]
   сертификат основного домена валиден, `https://tokenapp.ru/health/ready` → `200`.
 - 2026-08-10 Timeweb разблокировал исходящие 465, 587, 2525 и 25 до
   `smtp.timeweb.ru`; проверено TCP-пробой с самого сервера.
+- 2026-08-13 на production выложен коммит `0ef466d` с cockpit-дизайном
+  индивидуального занятия 1a без удаления прежних функций. Перед обновлением
+  создан дамп PostgreSQL и архив кода в
+  `/opt/token/.deploy-backups/20260812-211124`; контейнер приложения пересобран,
+  миграция `006_lesson_note_parent_visibility.sql` применена. После выкладки
+  app/PostgreSQL/Caddy healthy, `/health/live` и `/health/ready` отвечают `200`,
+  email probe — `ok`, публичные JS/CSS содержат runtime 1a.
+- 2026-08-13 этап 4 полностью выложен коммитами `9bb5aaf` и `90719bc`:
+  deny-by-default policies, role/resource/action matrix, object-level tests,
+  audit предметных операций и версионированные согласия. Применена миграция
+  `007_user_consents.sql`; `/privacy.html` и `/terms.html` доступны до входа.
+  Резервная точка перед релизом: `/opt/token/.deploy-backups/20260812-214110`.
+  После релиза app/PostgreSQL/Caddy healthy, live/ready и email probe — `ok`.
 
 ## Как выкатывается код
 
@@ -57,12 +70,10 @@ infra/compose/production.yml up -d --build`. Миграции накатываю
 
 ## Блокеры публикации
 
-1. В `production.env` нет почтовых переменных. Пока их нет, выкатка ветки
-   `account-lifecycle` не поднимет приложение: SMTP обязателен в production.
-2. Пароль PostgreSQL раскрыт и не сменён. Меняется не только в `production.env`,
+1. Пароль PostgreSQL раскрыт и не сменён. Меняется не только в `production.env`,
    но и в самой базе (`ALTER USER`): у инициализированного тома пароль хранится
    внутри, и правка переменной одна ничего не даёт.
-3. [[Безопасность|Production Identity и безопасность]] ещё не завершена полностью;
+2. [[Безопасность|Production Identity и безопасность]] ещё не завершена полностью;
    публичный запуск допускается только после минимального security-gate.
 
 ## Связи

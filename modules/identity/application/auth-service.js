@@ -3,6 +3,7 @@ const { v7: uuidv7 } = require('uuid');
 const argon2 = require('@node-rs/argon2');
 
 const { generateCode, formatCode, normalizeCode } = require('../domain/access-code.js');
+const { CURRENT_CONSENTS, validateConsents } = require('../domain/consent.js');
 
 const SESSION_DAYS = 30;
 const TRUSTED_DEVICE_DAYS = 30;
@@ -62,6 +63,7 @@ class AuthService {
     this.publicOrigin = options.publicOrigin || 'http://localhost:3000';
     this.exposeTokens = options.exposeTokens === true;
     this.logger = options.logger || { info() {}, warn() {}, error() {} };
+    this.privilegedRoles = new Set(options.privilegedRoles || ['admin']);
   }
   tokenHash(token) {
     return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -172,6 +174,8 @@ class AuthService {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))
       return { error: 'Похоже, email введён с ошибкой' };
     if (password.length < 10) return { error: 'Пароль — минимум 10 символов' };
+    if (!validateConsents(data.consents))
+      return { error: 'Примите условия использования и согласие на обработку данных' };
     if (!this.roles[role]) return { error: 'Выберите роль' };
     if (!this.roles[role].enabled)
       return { error: `Роль «${this.roles[role].label}» пока недоступна` };
@@ -195,6 +199,14 @@ class AuthService {
       yearsExp: Number(data.yearsExp) || 1,
       rate: Number(data.rate) || 0,
       meetingUrl: String(data.meetingUrl || ''),
+      consents: Object.entries(CURRENT_CONSENTS).map(([type, documentVersion]) => ({
+        id: uuidv7(),
+        type,
+        documentVersion,
+        acceptedAt: createdAt,
+        ip: String(context.ip || '').slice(0, 100),
+        userAgent: String(context.userAgent || '').slice(0, 200),
+      })),
     });
     const delivery = await this.issueToken(user, 'verify_email', context);
     await this.security('account_registered', { ...context, userId: user.id });
@@ -229,7 +241,8 @@ class AuthService {
     // Пароль сошёлся. Дальше решаем, нужен ли второй фактор: на уже доверенном
     // устройстве код спрашивать незачем, иначе ученик перед каждым занятием
     // лезет в почту.
-    if (context.deviceToken) {
+    const privileged = this.privilegedRoles.has(user.role);
+    if (context.deviceToken && !privileged) {
       const trusted = await this.store.touchTrustedDevice(
         user.id,
         this.tokenHash(context.deviceToken),
@@ -248,6 +261,7 @@ class AuthService {
     await this.security('login_code_requested', { ...context, userId: user.id });
     return {
       codeRequired: true,
+      privilegedMfa: privileged,
       challenge: delivery.handle,
       emailHint: maskEmail(user.email),
       delivered: delivery.delivered,
@@ -275,13 +289,17 @@ class AuthService {
     }
     const user = await this.store.findUserById(redeemed.userId);
     if (!user) return { error: 'Код недействителен или истёк' };
-    const device = await this.trustDevice(user.id, context);
+    const privileged = this.privilegedRoles.has(user.role);
+    const device = privileged ? null : await this.trustDevice(user.id, context);
     await this.security('login_succeeded', {
       ...context,
       userId: user.id,
-      metadata: { factor: 'email_code' },
+      metadata: { factor: 'email_code', privilegedMfa: privileged },
     });
-    return { user, deviceToken: device.token, deviceExpires: device.expires };
+    return {
+      user,
+      ...(device ? { deviceToken: device.token, deviceExpires: device.expires } : {}),
+    };
   }
   async resendLoginCode(challenge, context = {}) {
     const now = new Date().toISOString();

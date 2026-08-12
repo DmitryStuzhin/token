@@ -47,6 +47,20 @@ class SqliteIdentityStore {
           input.meetingUrl,
         );
       }
+      const consent = db.prepare(`INSERT INTO user_consents
+        (id,user_id,consent_type,document_version,accepted_at,ip,user_agent)
+        VALUES (?,?,?,?,?,?,?)`);
+      for (const item of input.consents) {
+        consent.run(
+          item.id,
+          input.id,
+          item.type,
+          item.documentVersion,
+          item.acceptedAt,
+          item.ip,
+          item.userAgent,
+        );
+      }
     })();
     return this.findUserById(input.id);
   }
