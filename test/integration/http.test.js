@@ -177,6 +177,8 @@ test('main learning flow works through public API', async () => {
     .post(`/api/lessons/${lesson.body.id}/links`)
     .send({ type: 'material', url: 'https://example.test/private' });
   assert.equal(foreignLesson.status, 403);
+  const ownLessonRead = await tutor.get(`/api/v1/lessons/${lesson.body.id}`);
+  assert.equal(ownLessonRead.status, 200);
 
   const group = await tutor.post('/api/groups').send({
     subjectId: 'inf',
@@ -252,6 +254,15 @@ test('main learning flow works through public API', async () => {
   });
   assert.equal(invalidReopen.status, 400);
   assert.match(invalidReopen.body.error, /Недопустимый переход Lesson/);
+  const auditRows = db
+    .prepare(
+      `SELECT metadata FROM security_events
+    WHERE user_id=(SELECT id FROM users WHERE email=?) AND event_type='subject_access'`,
+    )
+    .all('flow-tutor@example.test')
+    .map((row) => JSON.parse(row.metadata));
+  assert.ok(auditRows.some((item) => item.action === 'read' && item.resource === 'lessons'));
+  assert.ok(auditRows.some((item) => item.action === 'create' && item.resource === 'lessons'));
 });
 
 test('invalid JSON has a generic response without stack trace', async () => {
