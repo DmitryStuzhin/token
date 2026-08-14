@@ -15,7 +15,10 @@ const PUBLIC = path.join(__dirname, '..', 'public');
 /** Внутри app.use префикс срезан, поэтому у точного совпадения путь равен «/». */
 const onlyExact = (middleware) => (req, res, next) =>
   req.path === '/' ? middleware(req, res, next) : next();
-const OPEN_PAGES = new Set(['/login.html', '/privacy.html', '/terms.html', '/favicon.ico']);
+const OPEN_PAGES = new Set([
+  '/login.html', '/privacy.html', '/terms.html', '/favicon.ico',
+  '/board-spike.html', // временно: разведка Excalidraw, из ветки не выходит
+]);
 
 function createApp(options = {}) {
   const config = options.config || require('./config.js').loadConfig();
