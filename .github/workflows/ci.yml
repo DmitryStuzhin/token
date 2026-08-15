@@ -20,6 +20,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run build:board
       - run: npm run check
       - run: npm run test:ci
       - run: npx playwright install --with-deps chromium
