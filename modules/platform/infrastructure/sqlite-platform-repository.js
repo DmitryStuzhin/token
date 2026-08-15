@@ -23,6 +23,22 @@ class SqlitePlatformRepository {
   taskWithAnswer(id) {
     return taskWithAnswer(id);
   }
+  async loadBoard(lessonId) {
+    const row = db.prepare('SELECT elements FROM lesson_boards WHERE lesson_id=?').get(lessonId);
+    if (!row) return [];
+    try {
+      const parsed = JSON.parse(row.elements);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  async saveBoard(lessonId, elements) {
+    db.prepare(
+      `INSERT INTO lesson_boards (lesson_id,elements,updated_at) VALUES (?,?,?)
+      ON CONFLICT(lesson_id) DO UPDATE SET elements=excluded.elements,updated_at=excluded.updated_at`,
+    ).run(lessonId, JSON.stringify(elements), new Date().toISOString());
+  }
   async transaction(work) {
     let release;
     const previous = this.writeQueue;
@@ -191,18 +207,25 @@ class SqlitePlatformRepository {
       )
       .run(status, policy, groupId, studentId);
   }
+  /**
+   * Пересечения занятий. Границы сравниваются строками, поэтому конец интервала
+   * обязан быть в том же формате, что и вход: datetime() отдаёт
+   * «2026-08-16 20:00:00», а это лексикографически меньше любого
+   * «2026-08-16T…Z» — условие всегда ложно, и двойное бронирование проходило
+   * молча. strftime с тем же шаблоном, что у Date#toISOString, это чинит.
+   */
   lessonConflicts(tutorId, startsAt, durationMin, studentIds, exceptId = null) {
     const end = new Date(new Date(startsAt).getTime() + durationMin * 60000).toISOString();
     const tutor = db
       .prepare(
-        "SELECT id FROM lessons WHERE tutor_id=? AND id<>IFNULL(?, '') AND status='planned' AND starts_at < ? AND datetime(starts_at,'+'||duration_min||' minutes') > ? LIMIT 1",
+        "SELECT id FROM lessons WHERE tutor_id=? AND id<>IFNULL(?, '') AND status='planned' AND starts_at < ? AND strftime('%Y-%m-%dT%H:%M:%fZ',starts_at,'+'||duration_min||' minutes') > ? LIMIT 1",
       )
       .get(tutorId, exceptId, end, startsAt);
     if (tutor) return tutor;
     for (const sid of studentIds) {
       const hit = db
         .prepare(
-          "SELECT l.id FROM lessons l LEFT JOIN enrollments e ON e.id=l.enrollment_id LEFT JOIN group_members gm ON gm.group_id=l.group_id AND gm.status='active' WHERE l.id<>IFNULL(?, '') AND l.status='planned' AND (e.student_id=? OR gm.student_id=?) AND l.starts_at < ? AND datetime(l.starts_at,'+'||l.duration_min||' minutes') > ? LIMIT 1",
+          "SELECT l.id FROM lessons l LEFT JOIN enrollments e ON e.id=l.enrollment_id LEFT JOIN group_members gm ON gm.group_id=l.group_id AND gm.status='active' WHERE l.id<>IFNULL(?, '') AND l.status='planned' AND (e.student_id=? OR gm.student_id=?) AND l.starts_at < ? AND strftime('%Y-%m-%dT%H:%M:%fZ',l.starts_at,'+'||l.duration_min||' minutes') > ? LIMIT 1",
         )
         .get(exceptId, sid, sid, end, startsAt);
       if (hit) return hit;

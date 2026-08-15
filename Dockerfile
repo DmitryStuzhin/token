@@ -18,6 +18,12 @@ COPY packages/db/package.json packages/db/package.json
 
 RUN npm ci --ignore-scripts=false
 
+# Доска занятия — единственная часть фронтенда, которой нужна сборка.
+# Артефакт не коммитится, поэтому собирается здесь.
+COPY board ./board
+COPY scripts/build-board.js ./scripts/build-board.js
+RUN npm run build:board
+
 FROM node:20-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
@@ -28,6 +34,7 @@ COPY package.json package-lock.json ./
 COPY modules ./modules
 COPY packages ./packages
 COPY public ./public
+COPY --from=dependencies /app/public/vendor ./public/vendor
 COPY server ./server
 COPY shared ./shared
 
