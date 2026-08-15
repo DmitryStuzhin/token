@@ -11,7 +11,11 @@ const logger = createLogger(config.logLevel);
 const app = createApp({ config, logger });
 const server = http.createServer(app);
 
-app.locals.live = live.create(server, { auth: app.locals.auth, repository: app.locals.repository });
+app.locals.live = live.create(server, {
+  auth: app.locals.auth,
+  repository: app.locals.repository,
+  logger,
+});
 
 async function start() {
   if (config.databaseDriver === 'postgres' && config.databaseMigrateOnStart) {

@@ -1,10 +1,12 @@
 const { WebSocket, WebSocketServer } = require('ws');
 const A = require('./auth.js');
+const { LessonBoards } = require('./board.js');
 
 function create(server, dependencies) {
-  const { auth, repository } = dependencies;
+  const { auth, repository, logger } = dependencies;
   const wss = new WebSocketServer({ noServer: true });
   const roomsByLesson = new Map();
+  const boards = new LessonBoards(repository, logger);
 
   function join(lessonId, socket) {
     if (!roomsByLesson.has(lessonId)) roomsByLesson.set(lessonId, new Set());
@@ -14,7 +16,55 @@ function create(server, dependencies) {
     const room = roomsByLesson.get(lessonId);
     if (!room) return;
     room.delete(socket);
-    if (!room.size) roomsByLesson.delete(lessonId);
+    if (!room.size) {
+      roomsByLesson.delete(lessonId);
+      // Последний вышел — дописываем доску и освобождаем память.
+      void boards.release(lessonId).catch(() => undefined);
+    }
+  }
+
+  function broadcast(lessonId, payload, exclude) {
+    const room = roomsByLesson.get(lessonId);
+    if (!room) return;
+    const message = JSON.stringify(payload);
+    room.forEach(client => {
+      if (client !== exclude && client.readyState === WebSocket.OPEN) client.send(message);
+    });
+  }
+
+  /**
+   * Правки доски. Роль не проверяем: и репетитор, и ученик занятия рисуют на
+   * общем холсте — право доступа уже подтверждено при upgrade.
+   */
+  async function boardUpdate(socket, message) {
+    const accepted = await boards.apply(socket.lessonId, message.elements);
+    if (!accepted.length) return;
+    broadcast(socket.lessonId, {
+      type:'board_update', lessonId:socket.lessonId, elements:accepted,
+      senderRole:socket.role,
+    }, socket);
+  }
+
+  /** Курсор соседа. Живёт только в эфире: в сцену не пишется и не хранится. */
+  function boardPointer(socket, message) {
+    const point = message && message.pointer;
+    const x = Number(point && point.x);
+    const y = Number(point && point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    broadcast(socket.lessonId, {
+      type:'board_pointer', lessonId:socket.lessonId,
+      id:socket.participantId, name:socket.userName, role:socket.role,
+      pointer:{ x, y }, button:message.button === 'down' ? 'down' : 'up',
+      selected:Array.isArray(message.selected) ? message.selected.slice(0, 200) : [],
+    }, socket);
+  }
+
+  async function sendBoard(socket) {
+    const elements = await boards.elements(socket.lessonId);
+    if (socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type:'board_snapshot', lessonId:socket.lessonId, elements,
+    }));
   }
   async function snapshotOf(lessonId, studentId) {
     const state = await repository.fullState();
@@ -201,6 +251,7 @@ function create(server, dependencies) {
         webSocket.userName = user.name;
         webSocket.lessonId = lessonId;
         webSocket.studentId = user.role === 'student' && profile ? profile.id : null;
+        webSocket.participantId = `${user.id}:${Date.now().toString(36)}`;
         join(lessonId, webSocket);
         wss.emit('connection', webSocket, request);
       });
@@ -234,11 +285,21 @@ function create(server, dependencies) {
       if (socket.role === 'tutor' && ['laser_start','laser_points','laser_end','hint'].includes(message?.type)) {
         void tutorEvent(socket, message).catch(() => undefined);
       }
+      if (message?.type === 'board_update') {
+        void boardUpdate(socket, message).catch(error =>
+          logger?.error?.('board_update_failed', { lessonId:socket.lessonId, error:error.message }));
+      }
+      if (message?.type === 'board_pointer') boardPointer(socket, message);
+      if (message?.type === 'board_sync') void sendBoard(socket).catch(() => undefined);
     });
-    socket.on('close', () => { leave(socket.lessonId, socket); presence(socket.lessonId); });
+    socket.on('close', () => {
+      leave(socket.lessonId, socket);
+      presence(socket.lessonId);
+      broadcast(socket.lessonId, { type:'board_left', id:socket.participantId });
+    });
     socket.on('error', () => leave(socket.lessonId, socket));
   });
-  return { push, presence, invalidate, rooms: roomsByLesson };
+  return { push, presence, invalidate, boards, rooms: roomsByLesson };
 }
 
 module.exports = { create };

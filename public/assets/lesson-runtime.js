@@ -269,13 +269,56 @@
     const attempts = selectedStudent ? (lesson.taskIds || []).map(id => C.attemptFor(selectedStudent,id,{lessonId:lesson.id})).filter(Boolean) : [];
     const solved = attempts.filter(item => item.isCorrect).length; const seconds=attempts.reduce((sum,item)=>sum+(item.activeSeconds||0),0);
     return `<header class="lesson-head"><div class="lesson-identity"><span class="head-avatar">${initials(group ? group.title : (userOf(selectedStudent)||{}).name)}</span><i class="${completed ? 'done' : C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${group ? esc(group.title) : esc((userOf(selectedStudent)||{}).name || subject.name)}</strong><span>${esc(subject.name)} · ${C.fmtDateFull(lesson.startsAt)} · ${lesson.durationMin} мин</span></div></div><div class="header-kpis"><span><small>решено</small><b>${solved}/${(lesson.taskIds||[]).length}</b></span><span><small>активная работа</small><b>${C.fmtDurShort(seconds)}</b></span></div>
-      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
+      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span><button class="button" id="open-board">Доска</button>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
   }
   function render() {
     const pageRoot = document.getElementById('lesson-root');
     pageRoot.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
     ensurePythonRunner();
     bindCommon(); bindEditor(document.querySelector('.interactive-editor')); connectLive(); updateConnectionState();
+    document.getElementById('open-board')?.addEventListener('click', toggleBoard);
+  }
+
+  /* ── доска ───────────────────────────────────────────────────────
+     Слой лежит в body, а не в #lesson-root: рабочая область занятия
+     перерисовывается через innerHTML, и редактор внутри неё пересоздавался
+     бы вместе с ней, теряя и холст, и подключение. */
+  function boardLayer() {
+    let layer = document.getElementById('lesson-board-layer');
+    if (layer) return layer;
+    layer = document.createElement('div');
+    layer.id = 'lesson-board-layer';
+    layer.className = 'board-layer';
+    layer.hidden = true;
+    layer.innerHTML = `<div class="board-bar">
+        <strong>Доска занятия</strong>
+        <span class="board-hint">рисуют оба, изменения видны сразу</span>
+        <button class="button" id="close-board">Свернуть</button>
+      </div><div class="board-canvas" id="lesson-board-canvas"></div>`;
+    document.body.append(layer);
+    layer.querySelector('#close-board').addEventListener('click', toggleBoard);
+    return layer;
+  }
+
+  async function toggleBoard() {
+    const layer = boardLayer();
+    const opening = layer.hidden;
+    if (!opening) {
+      LessonBoard.close();
+      layer.hidden = true;
+      return;
+    }
+    layer.hidden = false;
+    const button = document.getElementById('open-board');
+    if (button) button.disabled = true;
+    try {
+      await LessonBoard.open(document.getElementById('lesson-board-canvas'), send);
+    } catch (error) {
+      layer.hidden = true;
+      alert(error.message || 'Не удалось открыть доску');
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function bindCommon() {
@@ -543,6 +586,7 @@
       if (message.type === 'state_invalidated') scheduleStateRefresh();
       if (!tutor && ['laser_start','laser_points','laser_end'].includes(message.type)) drawRemoteLaser(message);
       if (!tutor && message.type === 'hint') receiveHint(message);
+      if (message.type && message.type.startsWith('board_')) LessonBoard.handle(message);
     };
     socket.onclose = () => { socketReady = false; updateConnectionState(); retrySocket(); };
     socket.onerror = () => { try { socket.close(); } catch (_) {} };

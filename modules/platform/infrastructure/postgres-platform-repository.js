@@ -1009,6 +1009,21 @@ class PostgresPlatformRepository {
         }
       : null;
   }
+  async loadBoard(lessonId) {
+    const id = await this.resolve('lessons', lessonId);
+    const result = await this.query('SELECT elements FROM lesson_boards WHERE lesson_id=$1', [id]);
+    const value = result.rows[0]?.elements;
+    const parsed = parseJson(value, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+  async saveBoard(lessonId, elements) {
+    const id = await this.resolve('lessons', lessonId);
+    await this.query(
+      `INSERT INTO lesson_boards (lesson_id,elements,updated_at) VALUES ($1,$2,now())
+       ON CONFLICT (lesson_id) DO UPDATE SET elements=excluded.elements,updated_at=now()`,
+      [id, JSON.stringify(elements)],
+    );
+  }
   async optimistic(table, entity, changes) {
     const id = await this.resolve(table, entity.id);
     const entries = Object.entries(changes);

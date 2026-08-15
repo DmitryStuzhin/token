@@ -23,6 +23,22 @@ class SqlitePlatformRepository {
   taskWithAnswer(id) {
     return taskWithAnswer(id);
   }
+  async loadBoard(lessonId) {
+    const row = db.prepare('SELECT elements FROM lesson_boards WHERE lesson_id=?').get(lessonId);
+    if (!row) return [];
+    try {
+      const parsed = JSON.parse(row.elements);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  async saveBoard(lessonId, elements) {
+    db.prepare(
+      `INSERT INTO lesson_boards (lesson_id,elements,updated_at) VALUES (?,?,?)
+      ON CONFLICT(lesson_id) DO UPDATE SET elements=excluded.elements,updated_at=excluded.updated_at`,
+    ).run(lessonId, JSON.stringify(elements), new Date().toISOString());
+  }
   async transaction(work) {
     let release;
     const previous = this.writeQueue;

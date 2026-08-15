@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS account_tokens (
   consumed_at TEXT, requested_ip TEXT);
 CREATE INDEX IF NOT EXISTS idx_account_tokens_lookup ON account_tokens(purpose, token_hash, expires_at);
 
+CREATE TABLE IF NOT EXISTS lesson_boards (
+  lesson_id TEXT PRIMARY KEY, elements TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS trusted_devices (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

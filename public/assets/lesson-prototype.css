@@ -183,3 +183,13 @@
 @media(max-width:1360px){.cockpit-layout{grid-template-columns:minmax(0,1fr) 300px}.header-kpis{display:none}}
 @media(max-width:1180px){.cockpit-layout{grid-template-columns:minmax(0,1fr) 48px}.lesson-dock{overflow:visible}.dock-tabs{height:auto;display:flex;flex-direction:column}.dock-tabs button{height:38px;font-size:0}.dock-tabs button::first-letter{font-size:13px}.dock-body,.dock-homework{position:absolute;right:48px;width:310px;z-index:10;background:#161b24;display:none;box-shadow:-16px 0 35px rgba(0,0,0,.28)}.dock-body{inset-block:0 82px}.dock-homework{bottom:0}.lesson-dock:focus-within .dock-body,.lesson-dock:focus-within .dock-homework{display:block}}
 @media(max-width:900px){.lesson-prototype:has(.cockpit-layout){height:auto;overflow:auto}.lesson-prototype:has(.cockpit-layout) .lesson-shell,.lesson-prototype:has(.cockpit-layout) .lesson-main{height:auto;min-height:100vh}.lesson-prototype:has(.cockpit-layout) .lesson-head{height:auto;min-height:62px;flex-wrap:wrap}.cockpit-layout{height:auto;display:flex;flex-direction:column}.cockpit-primary{min-height:720px}.lesson-dock{min-height:480px}.dock-tabs{height:43px;display:grid}.dock-tabs button{height:auto;font-size:10px}.dock-body,.dock-homework{position:static;width:auto;display:block;box-shadow:none}.dock-homework .runtime-form{position:static;width:auto}.cockpit-primary>.interactive-editor .editor-stage{min-height:390px}}
+
+/* ── доска занятия ──────────────────────────────────────────────── */
+.board-layer{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+  background:var(--bg,#fff)}
+.board-layer[hidden]{display:none}
+.board-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel)}
+.board-bar strong{font-size:14px}
+.board-hint{font-size:12px;color:var(--muted);flex:1}
+.board-canvas{flex:1;min-height:0;position:relative}
