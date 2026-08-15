@@ -8,14 +8,20 @@ import '@excalidraw/excalidraw/index.css';
  * ни про React, ни про внутренности Excalidraw: наружу торчит только
  * window.TokenBoard.mount с несколькими методами.
  */
+/** Приложение переключается по prefers-color-scheme — доска должна за ним идти. */
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
 function mount(container, options = {}) {
   const root = createRoot(container);
   let api = null;
   let pending = null;
+  const applyTheme = () => api?.updateScene({ appState: { theme: darkQuery.matches ? 'dark' : 'light' } });
+  darkQuery.addEventListener('change', applyTheme);
 
   root.render(
     <Excalidraw
       langCode="ru-RU"
+      theme={darkQuery.matches ? 'dark' : 'light'}
       excalidrawAPI={value => {
         api = value;
         if (pending) {
@@ -53,6 +59,7 @@ function mount(container, options = {}) {
       api?.scrollToContent(undefined, { fitToContent: true });
     },
     destroy() {
+      darkQuery.removeEventListener('change', applyTheme);
       root.unmount();
     },
   };

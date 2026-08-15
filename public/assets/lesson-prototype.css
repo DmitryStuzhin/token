@@ -191,5 +191,10 @@
 .board-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;
   border-bottom:1px solid var(--line);background:var(--panel)}
 .board-bar strong{font-size:14px}
+/* .button снаружи опирается на контекст шапки занятия, здесь его нет — без
+   собственных цветов кнопка получает системные и теряется на тёмном фоне. */
+.board-bar .button{border:1px solid var(--line);background:var(--panel);color:var(--text);
+  cursor:pointer}
+.board-bar .button:hover{border-color:var(--brand);color:var(--brand)}
 .board-hint{font-size:12px;color:var(--muted);flex:1}
 .board-canvas{flex:1;min-height:0;position:relative}
