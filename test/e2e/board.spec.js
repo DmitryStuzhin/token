@@ -28,16 +28,19 @@ async function register(request, user, prefix) {
 }
 
 /** Настоящее рисование мышью: тест обязан ходить теми же путями, что человек. */
-async function draw(page, from, to) {
+async function draw(page, from, to, steps = 12) {
   // Радиокнопка инструмента перекрыта своей иконкой — кликаем принудительно.
   await page.locator('[data-testid="toolbar-freedraw"]').click({ force: true });
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  for (let step = 1; step <= 12; step += 1) {
+  for (let step = 1; step <= steps; step += 1) {
     await page.mouse.move(
-      from.x + ((to.x - from.x) * step) / 12,
-      from.y + ((to.y - from.y) * step) / 12,
+      from.x + ((to.x - from.x) * step) / steps,
+      from.y + ((to.y - from.y) * step) / steps,
     );
+    // Пауза длиннее интервала отправки: иначе весь штрих уходит одной посылкой
+    // и тест не заметит, что продолжение штриха перестало доезжать.
+    await page.waitForTimeout(60);
   }
   await page.mouse.up();
 }
@@ -110,6 +113,13 @@ test('lesson board syncs both ways and survives a reload', async ({ browser }) =
     .poll(() => studentPage.evaluate(() => LessonBoard.count()), { timeout: 10_000 })
     .toBeGreaterThan(0);
   const afterTutor = await studentPage.evaluate(() => LessonBoard.count());
+
+  // Штрих должен доехать целиком, а не застыть первой точкой: Excalidraw правит
+  // элемент на месте, и если запоминать ссылку на него, продолжение штриха
+  // выглядит «уже отправленным» и до соседа не доходит.
+  await expect
+    .poll(() => studentPage.evaluate(() => LessonBoard.maxVersion()), { timeout: 10_000 })
+    .toBeGreaterThan(3);
 
   // Ученик рисует — репетитор видит. Это и есть двусторонность.
   await draw(studentPage, { x: 400, y: 500 }, { x: 650, y: 560 });
