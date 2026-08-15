@@ -61,7 +61,7 @@
 .editor-status.ok{background:var(--green-bg);color:var(--green)}
 .editor-status.error{background:var(--red-bg);color:var(--red)}
 .editor-status.hint{background:var(--amber-bg);color:var(--amber)}
-.editor-compact .editor-stage{min-height:310px}
+.editor-compact .editor-stage,.editor-compact .board-stage{min-height:310px}
 .editor-compact .editor-top span{display:none}
 .hint-composer{position:fixed;left:50%;bottom:24px;z-index:100;width:min(520px,calc(100vw - 28px));transform:translateX(-50%);padding:14px;background:var(--panel);border-radius:14px;box-shadow:0 20px 55px rgba(0,0,0,.42)}
 .hint-composer strong{display:block;margin-bottom:9px;font-size:13px}
@@ -185,16 +185,13 @@
 @media(max-width:900px){.lesson-prototype:has(.cockpit-layout){height:auto;overflow:auto}.lesson-prototype:has(.cockpit-layout) .lesson-shell,.lesson-prototype:has(.cockpit-layout) .lesson-main{height:auto;min-height:100vh}.lesson-prototype:has(.cockpit-layout) .lesson-head{height:auto;min-height:62px;flex-wrap:wrap}.cockpit-layout{height:auto;display:flex;flex-direction:column}.cockpit-primary{min-height:720px}.lesson-dock{min-height:480px}.dock-tabs{height:43px;display:grid}.dock-tabs button{height:auto;font-size:10px}.dock-body,.dock-homework{position:static;width:auto;display:block;box-shadow:none}.dock-homework .runtime-form{position:static;width:auto}.cockpit-primary>.interactive-editor .editor-stage{min-height:390px}}
 
 /* ── доска занятия ──────────────────────────────────────────────── */
-.board-layer{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
-  background:var(--bg,#fff)}
-.board-layer[hidden]{display:none}
-.board-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;
-  border-bottom:1px solid var(--line);background:var(--panel)}
-.board-bar strong{font-size:14px}
-/* .button снаружи опирается на контекст шапки занятия, здесь его нет — без
-   собственных цветов кнопка получает системные и теряется на тёмном фоне. */
-.board-bar .button{border:1px solid var(--line);background:var(--panel);color:var(--text);
-  cursor:pointer}
-.board-bar .button:hover{border-color:var(--brand);color:var(--brand)}
-.board-hint{font-size:12px;color:var(--muted);flex:1}
-.board-canvas{flex:1;min-height:0;position:relative}
+/* Доска занимает ровно место редактора кода: тот же блок, та же высота,
+   переключение вкладкой — чтобы разбор не выкидывал из контекста задания. */
+.board-stage{position:relative;min-height:430px;background:var(--panel);overflow:hidden}
+.board-stage[hidden]{display:none}
+.board-host{position:absolute;inset:0}
+.stage-switch{display:flex;background:var(--brand-soft);border-radius:10px;padding:3px;gap:2px}
+.stage-switch button{border:0;background:transparent;color:var(--muted);border-radius:8px;
+  padding:5px 12px;font-size:12px;font-weight:650;cursor:pointer}
+.stage-switch button.active{background:var(--panel);color:var(--text);box-shadow:var(--shadow-sm)}
+

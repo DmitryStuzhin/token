@@ -42,8 +42,9 @@ async function draw(page, from, to) {
   await page.mouse.up();
 }
 
+/** Доска — вкладка рабочей области, рядом с кодом, а не отдельный экран. */
 async function openBoard(page) {
-  await page.getByRole('button', { name: 'Доска', exact: true }).click();
+  await page.locator('.stage-switch button[data-stage="board"]').click();
   await expect(page.locator('.excalidraw')).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(700);
 }
@@ -86,6 +87,18 @@ test('lesson board syncs both ways and survives a reload', async ({ browser }) =
     })
   ).json();
 
+  // Доска живёт в карточке задания, поэтому занятию нужна задача и попытка.
+  const tasks = await (
+    await tutorContext.request.get('/api/v1/tasks?subject=inf&limit=100')
+  ).json();
+  expect(
+    (
+      await post(tutorContext.request, `/api/v1/lessons/${lesson.id}/tasks`, {
+        taskId: tasks.items[0].id,
+      })
+    ).ok(),
+  ).toBeTruthy();
+
   await tutorPage.goto(`/lesson.html?lesson=${lesson.id}`);
   await studentPage.goto(`/lesson.html?lesson=${lesson.id}`);
   await openBoard(tutorPage);
@@ -105,6 +118,12 @@ test('lesson board syncs both ways and survives a reload', async ({ browser }) =
     .toBeGreaterThan(afterTutor - 1);
   const both = await tutorPage.evaluate(() => LessonBoard.count());
   expect(both).toBeGreaterThanOrEqual(2);
+
+  // Переключение на код и обратно не теряет сцену.
+  await studentPage.locator('.stage-switch button[data-stage="code"]').click();
+  await expect(studentPage.locator('.code-input')).toBeVisible();
+  await openBoard(studentPage);
+  expect(await studentPage.evaluate(() => LessonBoard.count())).toBeGreaterThanOrEqual(both);
 
   // Доска переживает перезагрузку: сцена хранится на сервере, а не в вкладке.
   await studentPage.reload();

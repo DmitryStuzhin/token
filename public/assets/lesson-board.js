@@ -147,13 +147,27 @@ window.LessonBoard = (function () {
     return loading;
   }
 
+  /**
+   * Запрос снимка. Отдельно от open, потому что доска может открыться раньше,
+   * чем поднимется сокет: тогда запрос уходит в никуда и сцена остаётся пустой.
+   * Вызывается ещё и на каждом переподключении — после обрыва мы могли
+   * пропустить чужие правки.
+   */
+  function sync() {
+    return send({ type: 'board_sync' });
+  }
+
   async function open(container, transport) {
     send = transport;
     await loadEditor();
     if (board) return board;
     board = window.TokenBoard.mount(container, { onChange, onPointerUpdate });
-    send({ type: 'board_sync' });
+    sync();
     return board;
+  }
+
+  function isOpen() {
+    return board !== null;
   }
 
   function close() {
@@ -169,5 +183,5 @@ window.LessonBoard = (function () {
     return known.size;
   }
 
-  return { open, close, handle, loadEditor, count };
+  return { open, close, handle, loadEditor, count, sync, isOpen };
 })();

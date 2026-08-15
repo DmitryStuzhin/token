@@ -39,6 +39,8 @@
   let homeworkNotice = '';
   let tutorDockTab = localStorage.getItem('token.lesson.tutorDock') || 'student';
   let statementCollapsed = localStorage.getItem('token.lesson.statementCollapsed') === 'true';
+  let stage = localStorage.getItem('token.lesson.stage') === 'board' ? 'board' : 'code';
+  let boardHost = null;
   let pythonRunner = null;
   const pythonRequests = new Map();
   const pythonReadyWaiters = [];
@@ -184,13 +186,20 @@
     const title = tutor ? `${esc((userOf(attempt.studentId) || {}).name || 'Ученик')} · №${task.number}` : 'Ваш черновик';
     const pythonStatus = pythonStatuses.get(attempt.id);
     const statusClass = pythonStatus?.kind || 'idle';
-    const statusText = pythonStatus?.text || (closed ? 'Работа закрыта' : 'Готово к запуску · Ctrl/⌘ + Enter');
+    const statusText = stage === 'board'
+      ? 'Доска общая: то, что рисует один, сразу видит другой'
+      : pythonStatus?.text || (closed ? 'Работа закрыта' : 'Готово к запуску · Ctrl/⌘ + Enter');
+    const board = stage === 'board';
     return `<section class="interactive-editor lesson-card flush" data-attempt="${esc(attempt.id)}" data-task="${esc(task.id)}" data-student="${esc(attempt.studentId)}">
-      <header class="editor-toolbar"><div><strong>${title}</strong><span>${closed ? 'работа закрыта' : tutor ? 'живой экран · изменения видит ученик' : 'сохраняется автоматически'}</span></div>
-        <div class="editor-actions">${tutor ? '<button class="laser-button" type="button">⌖ Лазер</button><button class="hint-button" type="button">Подсказка</button>' : ''}<button class="run-code" type="button">▷ Запустить</button></div></header>
-      <div class="editor-stage"><pre class="code-highlight" aria-hidden="true">${highlight(attempt.code || '')}</pre>
+      <header class="editor-toolbar"><div><strong>${title}</strong><span>${board ? 'общая доска · рисуют оба' : closed ? 'работа закрыта' : tutor ? 'живой экран · изменения видит ученик' : 'сохраняется автоматически'}</span></div>
+        <div class="stage-switch" role="tablist" aria-label="Рабочая область">
+          <button type="button" role="tab" data-stage="code" class="${board ? '' : 'active'}" aria-selected="${!board}">Код</button>
+          <button type="button" role="tab" data-stage="board" class="${board ? 'active' : ''}" aria-selected="${board}">Доска</button></div>
+        <div class="editor-actions">${tutor && !board ? '<button class="laser-button" type="button">⌖ Лазер</button><button class="hint-button" type="button">Подсказка</button>' : ''}${board ? '' : '<button class="run-code" type="button">▷ Запустить</button>'}</div></header>
+      <div class="editor-stage" ${board ? 'hidden' : ''}><pre class="code-highlight" aria-hidden="true">${highlight(attempt.code || '')}</pre>
         <textarea class="code-input" spellcheck="false" aria-label="Код решения" ${canEdit ? '' : 'readonly'}>${esc(attempt.code || '')}</textarea>
         <svg class="laser-layer" aria-hidden="true" preserveAspectRatio="none"></svg></div>
+      <div class="board-stage" id="board-slot" ${board ? '' : 'hidden'}></div>
       <footer class="editor-footer"><span class="editor-status ${statusClass}" aria-live="polite">${esc(statusText)}</span>
         ${!tutor ? studentActions(task, attempt, closed) : tutorActions(attempt)}</footer>
     </section>`;
@@ -269,59 +278,54 @@
     const attempts = selectedStudent ? (lesson.taskIds || []).map(id => C.attemptFor(selectedStudent,id,{lessonId:lesson.id})).filter(Boolean) : [];
     const solved = attempts.filter(item => item.isCorrect).length; const seconds=attempts.reduce((sum,item)=>sum+(item.activeSeconds||0),0);
     return `<header class="lesson-head"><div class="lesson-identity"><span class="head-avatar">${initials(group ? group.title : (userOf(selectedStudent)||{}).name)}</span><i class="${completed ? 'done' : C.lessonIsLive(lesson) ? 'live' : ''}"></i><div><strong>${group ? esc(group.title) : esc((userOf(selectedStudent)||{}).name || subject.name)}</strong><span>${esc(subject.name)} · ${C.fmtDateFull(lesson.startsAt)} · ${lesson.durationMin} мин</span></div></div><div class="header-kpis"><span><small>решено</small><b>${solved}/${(lesson.taskIds||[]).length}</b></span><span><small>активная работа</small><b>${C.fmtDurShort(seconds)}</b></span></div>
-      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span><button class="button" id="open-board">Доска</button>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
+      <div class="lesson-actions"><span class="connection-state" id="connection-state">подключение…</span>${call && !completed ? `<a class="button primary" href="${esc(call.url)}" target="_blank" rel="noopener">Подключиться</a>` : ''}${tutorAction}</div></header>`;
   }
   function render() {
     const pageRoot = document.getElementById('lesson-root');
     pageRoot.innerHTML = `<div class="lesson-shell">${nav()}<main class="lesson-main">${header()}<div id="lesson-workspace">${tutor ? (group ? tutorGroup() : tutorSolo()) : studentView()}</div></main></div>`;
     ensurePythonRunner();
     bindCommon(); bindEditor(document.querySelector('.interactive-editor')); connectLive(); updateConnectionState();
-    document.getElementById('open-board')?.addEventListener('click', toggleBoard);
   }
 
-  /* ── доска ───────────────────────────────────────────────────────
-     Слой лежит в body, а не в #lesson-root: рабочая область занятия
-     перерисовывается через innerHTML, и редактор внутри неё пересоздавался
-     бы вместе с ней, теряя и холст, и подключение. */
-  function boardLayer() {
-    let layer = document.getElementById('lesson-board-layer');
-    if (layer) return layer;
-    layer = document.createElement('div');
-    layer.id = 'lesson-board-layer';
-    layer.className = 'board-layer';
-    layer.hidden = true;
-    layer.innerHTML = `<div class="board-bar">
-        <strong>Доска занятия</strong>
-        <span class="board-hint">рисуют оба, изменения видны сразу</span>
-        <button class="button" id="close-board">Свернуть</button>
-      </div><div class="board-canvas" id="lesson-board-canvas"></div>`;
-    document.body.append(layer);
-    layer.querySelector('#close-board').addEventListener('click', toggleBoard);
-    return layer;
+
+  /* ── доска в рабочей области ─────────────────────────────────────
+     Узел доски создаётся один раз и переносится в слот: рабочая область
+     перерисовывается через innerHTML, и React-корень внутри неё умирал бы
+     на каждой перерисовке. Перенос узла для React безвреден — он не размонти-
+     рует корень, поэтому холст и подключение переживают перерисовку. */
+  function ensureBoardHost() {
+    if (boardHost) return boardHost;
+    boardHost = document.createElement('div');
+    boardHost.className = 'board-host';
+    return boardHost;
   }
 
-  async function toggleBoard() {
-    const layer = boardLayer();
-    const opening = layer.hidden;
-    if (!opening) {
-      LessonBoard.close();
-      layer.hidden = true;
-      return;
-    }
-    layer.hidden = false;
-    const button = document.getElementById('open-board');
-    if (button) button.disabled = true;
+  async function placeBoard() {
+    const slot = document.getElementById('board-slot');
+    if (!slot) return;
+    const host = ensureBoardHost();
+    if (host.parentElement !== slot) slot.append(host);
+    if (stage !== 'board') return;
     try {
-      await LessonBoard.open(document.getElementById('lesson-board-canvas'), send);
+      await LessonBoard.open(host, send);
+      // Монтирование асинхронное: сокет мог подняться, пока грузился бандл.
+      LessonBoard.sync();
     } catch (error) {
-      layer.hidden = true;
-      alert(error.message || 'Не удалось открыть доску');
-    } finally {
-      if (button) button.disabled = false;
+      slot.textContent = error.message || 'Не удалось открыть доску';
     }
+  }
+
+  function setStage(value) {
+    stage = value === 'board' ? 'board' : 'code';
+    localStorage.setItem('token.lesson.stage', stage);
+    if (stage === 'code') LessonBoard.close();
+    renderWorkspace();
   }
 
   function bindCommon() {
+    document.querySelectorAll('[data-stage]').forEach(button =>
+      button.addEventListener('click', () => setStage(button.dataset.stage)));
+    void placeBoard();
     document.querySelector('.collapse-statement')?.addEventListener('click', () => { statementCollapsed=!statementCollapsed; localStorage.setItem('token.lesson.statementCollapsed',String(statementCollapsed)); renderWorkspace(); });
     document.querySelectorAll('[data-dock-tab]').forEach(button => button.addEventListener('click', () => { tutorDockTab=button.dataset.dockTab; localStorage.setItem('token.lesson.tutorDock',tutorDockTab); renderWorkspace(); }));
     document.querySelectorAll('.open-bank-tab').forEach(button => button.addEventListener('click', () => { tutorDockTab='bank'; localStorage.setItem('token.lesson.tutorDock',tutorDockTab); renderWorkspace(); }));
@@ -435,7 +439,9 @@
         } catch (error) { setStatus(root, 'error', error.message); }
       }, 250);
     });
-    root.querySelector('.run-code').addEventListener('click', () => runPython(root));
+    // На вкладке доски кнопок запуска и лазера нет. Без «?.» здесь падал весь
+    // render, а вместе с ним и connectLive: занятие оставалось без живого канала.
+    root.querySelector('.run-code')?.addEventListener('click', () => runPython(root));
     if (tutor) {
       bindLaser(root);
       textarea.addEventListener('dblclick', () => showHintComposer(root, textarea));
@@ -496,6 +502,7 @@
   }
   function bindLaser(root) {
     const button = root.querySelector('.laser-button'); const layer = root.querySelector('.laser-layer');
+    if (!button || !layer) return;
     let points = []; let pending = []; let path = null; let strokeId = null; let laserFrame = null;
     button.addEventListener('click', () => { button.classList.toggle('active'); root.classList.toggle('laser-active', button.classList.contains('active')); });
     const normalized = event => { const rect = layer.getBoundingClientRect(); return { x:Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y:Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) }; };
@@ -577,6 +584,9 @@
     try { socket = new WebSocket(url); } catch (_) { return retrySocket(); }
     socket.onopen = () => {
       socketReady = true; updateConnectionState();
+      // Доска могла открыться до подключения, а после обрыва мы могли
+      // пропустить чужие правки — в обоих случаях просим снимок заново.
+      if (stage === 'board') LessonBoard.sync();
       if (socketEverOpened) scheduleStateRefresh();
       socketEverOpened = true;
     };
