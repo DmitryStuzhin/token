@@ -46,7 +46,7 @@
     "format:check": "prettier --check 'modules/**/*.{ts,js,json}' 'packages/**/*.{ts,js,json}' 'server/config.ts' 'test/**/*.ts' '*.{json,js}'",
     "typecheck": "tsc --noEmit",
     "boundaries": "depcruise modules packages server --config .dependency-cruiser.cjs",
-    "licenses": "license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;BlueOak-1.0.0'",
+    "licenses": "license-checker-rseidelsohn --production --excludePrivatePackages --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;BlueOak-1.0.0;CC0-1.0;Unlicense;0BSD'",
     "check": "npm run lint && npm run typecheck && npm run boundaries && npm run format:check && npm run api:check && node --check server/app.js && node --check server/api.js && node --check server/api-v1.js && node --check server/auth.js && node --check server/db.js && node --check server/index.js && node --check server/live.js && node --check server/logger.js && node --check server/security.js && node --check server/reference-data.js && node --check modules/platform/infrastructure/postgres-platform-repository.js && node --check modules/identity/application/auth-service.js && node --check modules/identity/infrastructure/postgres-identity-store.js && node --check shared/core.js && node --check shared/domain.js",
     "build:board": "node scripts/build-board.js"
   },
@@ -54,7 +54,12 @@
     "node": ">=20 <21"
   },
   "overrides": {
-    "js-yaml": "4.3.1"
+    "js-yaml": "4.3.1",
+    "nanoid": "^3.3.18",
+    "lodash-es": "^4.18.1",
+    "@excalidraw/mermaid-to-excalidraw": {
+      "nanoid": "^5.1.16"
+    }
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
