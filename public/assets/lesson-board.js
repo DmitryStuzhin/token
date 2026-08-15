@@ -24,6 +24,13 @@ window.LessonBoard = (function () {
 
   const versionOf = element => Number(element && element.version) || 0;
   const nonceOf = element => Number(element && element.versionNonce) || 0;
+  /**
+   * Excalidraw правит элементы на месте, поэтому запоминать сам объект нельзя:
+   * сохранённая ссылка мутирует вместе со сценой, сравнение версии сходится
+   * само с собой, и всё после первой точки считается «уже отправленным».
+   * Именно так штрих у соседа и застывал точкой. Храним снимок версии.
+   */
+  const stamp = element => ({ version: versionOf(element), versionNonce: nonceOf(element) });
   const newer = (incoming, current) =>
     !current ||
     versionOf(incoming) > versionOf(current) ||
@@ -34,6 +41,9 @@ window.LessonBoard = (function () {
     if (!outbox.size) return;
     const elements = [...outbox.values()];
     outbox = new Map();
+    // Снимок версии берётся ровно перед отправкой: между постановкой в очередь
+    // и отправкой элемент успевает дорасти, и запомнить надо то, что ушло.
+    for (const element of elements) known.set(element.id, stamp(element));
     send({ type: 'board_update', elements });
   }
 
@@ -51,8 +61,7 @@ window.LessonBoard = (function () {
   function onChange(elements) {
     for (const element of elements) {
       const current = known.get(element.id);
-      if (current && versionOf(current) === versionOf(element) && nonceOf(current) === nonceOf(element)) continue;
-      known.set(element.id, element);
+      if (current && current.version === versionOf(element) && current.versionNonce === nonceOf(element)) continue;
       queue(element);
     }
   }
@@ -78,7 +87,7 @@ window.LessonBoard = (function () {
   function applyRemote(elements) {
     const incoming = elements.filter(element => newer(element, known.get(element.id)));
     if (!incoming.length) return;
-    for (const element of incoming) known.set(element.id, element);
+    for (const element of incoming) known.set(element.id, stamp(element));
     if (!board) return;
     const scene = new Map(board.getElements().map(element => [element.id, element]));
     for (const element of incoming) {
@@ -178,10 +187,15 @@ window.LessonBoard = (function () {
     flush();
   }
 
-  /** Сколько элементов сцены известно этому клиенту — для диагностики. */
+  /** Состояние синхронизации — для диагностики и тестов. */
   function count() {
     return known.size;
   }
+  function maxVersion() {
+    let top = 0;
+    for (const value of known.values()) top = Math.max(top, value.version);
+    return top;
+  }
 
-  return { open, close, handle, loadEditor, count, sync, isOpen };
+  return { open, close, handle, loadEditor, count, maxVersion, sync, isOpen };
 })();
